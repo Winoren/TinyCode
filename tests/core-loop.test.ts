@@ -15,7 +15,6 @@ import {
   type AgentEvent,
   type AgentState,
   type Decision,
-  type EventDraft,
   type Task,
 } from "../src/core/contracts.ts";
 import { coreLoopDriver, type DriverContext, type RunDriver } from "../src/core/loop.ts";

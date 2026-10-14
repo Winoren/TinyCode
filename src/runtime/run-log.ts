@@ -114,7 +114,7 @@ export class JsonlRunLog implements RunLog {
   private readonly runsDirectory: string;
   private readonly runsIndexFile: string;
 
-  constructor(private readonly directory: string) {
+  constructor(directory: string) {
     this.runsDirectory = path.join(directory, "runs");
     this.runsIndexFile = path.join(directory, "runs.jsonl");
   }

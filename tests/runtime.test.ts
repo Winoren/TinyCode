@@ -14,7 +14,6 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   DEFAULT_BUDGET,
-  initialState,
   type AgentEvent,
   type RunError,
   type Task,
@@ -25,7 +24,6 @@ import { AgentRuntime, backoffDelayMs, createRuntime } from "../src/runtime/runt
 import { InMemoryRunLog, JsonlRunLog, parseEventLog } from "../src/runtime/run-log.ts";
 import { InMemorySessionStore, JsonSessionStore } from "../src/runtime/session-store.ts";
 import { functionalModel } from "../src/adapters/fake/index.ts";
-import { destructiveCommandPolicy } from "../src/core/gate.ts";
 
 const TASK: Task = { id: "task-1", input: "do the thing", cwd: "/tmp/ws" };
 

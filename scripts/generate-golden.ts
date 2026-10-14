@@ -19,7 +19,6 @@ import path from "node:path";
 
 import { fakeTools, scriptedModel } from "../src/adapters/fake/index.ts";
 import {
-  initialState,
   type AgentEvent,
   type Decision,
   type Task,
@@ -242,7 +241,6 @@ for (const scenario of SCENARIOS) {
   const events: AgentEvent[] = [];
   for await (const event of runtime.run(scenario.task)) events.push(event);
 
-  const runId = events[0]?.runId as string;
   const { state, terminal } = replayAgentState(events, scenario.task);
 
   const lines = events.map((event) => JSON.stringify(event)).join("\n");

@@ -13,6 +13,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { throwFsError } from "./fs-errors.ts";
+import { resolveWithinWorkspace } from "./paths.ts";
+
 export const DEFAULT_IGNORED_DIRECTORIES: ReadonlySet<string> = new Set([
   ".git",
   "node_modules",
@@ -100,4 +103,37 @@ export async function* walkFiles(options: WalkOptions): AsyncGenerator<string> {
       yield relative;
     }
   }
+}
+
+export type SearchTarget =
+  | { kind: "directory"; absolute: string; relative: string }
+  | { kind: "file"; absolute: string; relative: string };
+
+/**
+ * Decide what a search path actually points at.
+ *
+ * Callers used to hand the path straight to `walkFiles`, whose `readdir` failed on a
+ * file and was swallowed by a `catch { continue }` — so `grep pattern file.ts` reported
+ * "no matches" for a file that plainly contained the pattern, and a missing path was
+ * reported as an empty result rather than as missing. A wrong answer stated confidently
+ * is worse than an error.
+ */
+export async function resolveSearchTarget(
+  workspaceRoot: string,
+  candidate: string,
+): Promise<SearchTarget> {
+  const absolute = resolveWithinWorkspace(workspaceRoot, candidate);
+
+  let stats;
+  try {
+    stats = await fs.stat(absolute);
+  } catch (error) {
+    throwFsError(error, candidate);
+  }
+
+  const relative = path.relative(path.resolve(workspaceRoot), absolute);
+
+  return stats.isDirectory()
+    ? { kind: "directory", absolute, relative }
+    : { kind: "file", absolute, relative };
 }

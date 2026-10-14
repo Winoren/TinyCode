@@ -474,6 +474,35 @@ describe("walk cap", () => {
   });
 });
 
+describe("a search path that is a file, not a directory", () => {
+  it("searches the file rather than silently reporting no matches", async () => {
+    const cwd = await makeWorkspace();
+    await fs.writeFile(path.join(cwd, "only.ts"), "const needle = 1;\n", "utf8");
+
+    // Pointing a content search at a file is an obvious thing to do. Silently saying
+    // "no matches" is a wrong answer; the file plainly contains one.
+    const result = await run(grepTool, { pattern: "needle", path: "only.ts" }, cwd);
+
+    expect(result.content).toContain("only.ts:1:");
+  });
+
+  it("finds a file when the path is a file", async () => {
+    const cwd = await makeWorkspace();
+    await fs.writeFile(path.join(cwd, "only.test.ts"), "", "utf8");
+
+    const result = await run(findTool, { pattern: "*.test.ts", path: "only.test.ts" }, cwd);
+
+    expect(result.content).toContain("only.test.ts");
+  });
+
+  it("still reports a genuinely missing path honestly", async () => {
+    const cwd = await makeWorkspace();
+    await expect(run(grepTool, { pattern: "x", path: "nope" }, cwd)).rejects.toMatchObject({
+      code: "invalid_tool",
+    });
+  });
+});
+
 describe("an honest negative result", () => {
   it("does not state a capped search as a definitive answer", () => {
     const capped = emptySearchMessage("needle", { filesYielded: 20_000, stoppedEarly: true });

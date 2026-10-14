@@ -26,9 +26,8 @@ import path from "node:path";
 import { z } from "zod";
 
 import { AgentError, toolOutput } from "../core/contracts.ts";
-import { resolveWithinWorkspace } from "./paths.ts";
 import type { ToolDefinition } from "./types.ts";
-import { walkFiles, type WalkStats } from "./walk.ts";
+import { resolveSearchTarget, walkFiles, type WalkStats } from "./walk.ts";
 
 const FindInput = z.object({
   pattern: z
@@ -63,9 +62,27 @@ export const findTool: ToolDefinition<FindInput> = {
       );
     }
 
-    const root = resolveWithinWorkspace(ctx.cwd, input.path ?? ".");
+    const target = await resolveSearchTarget(ctx.cwd, input.path ?? ".");
     const limit = input.maxResults ?? DEFAULT_MAX_RESULTS;
     const matchWholePath = input.pattern.includes("/");
+
+    if (target.kind === "file") {
+      const subject = matchWholePath ? target.relative : path.basename(target.relative);
+      const matched = path.matchesGlob(subject, input.pattern);
+      const body = matched ? target.relative : emptyFindMessage(input.pattern, matchWholePath, {
+        filesYielded: 1,
+        stoppedEarly: false,
+      });
+      return toolOutput(body, {
+        pattern: input.pattern,
+        matchCount: matched ? 1 : 0,
+        filesWalked: 1,
+        truncated: false,
+        walkStoppedEarly: false,
+      });
+    }
+
+    const root = target.absolute;
 
     const matches: string[] = [];
     let truncated = false;

@@ -29,9 +29,8 @@ import { z } from "zod";
 
 import { AgentError, toolOutput } from "../core/contracts.ts";
 import { looksBinary } from "./binary.ts";
-import { resolveWithinWorkspace } from "./paths.ts";
 import type { ToolDefinition } from "./types.ts";
-import { walkFiles, type WalkStats } from "./walk.ts";
+import { resolveSearchTarget, walkFiles, type WalkStats } from "./walk.ts";
 
 const GrepInput = z.object({
   pattern: z.string().min(1).describe("JavaScript regular expression to search for"),
@@ -102,9 +101,46 @@ export const grepTool: ToolDefinition<GrepInput> = {
       throw new AgentError("invalid_tool", `invalid regular expression: ${String(error)}`);
     }
 
-    const root = resolveWithinWorkspace(ctx.cwd, input.path ?? ".");
+    const requested = input.path ?? ".";
+    const target = await resolveSearchTarget(ctx.cwd, requested);
     const limit = input.maxResults ?? DEFAULT_MAX_RESULTS;
     const deadline = Date.now() + REGEX_TOTAL_BUDGET_MS;
+
+    if (target.kind === "file") {
+      // Pointing a content search at a single file is an obvious thing to do, and it
+      // must search that file rather than reporting an empty tree.
+      const text = await readTextOrUndefined(target.absolute);
+      if (text === undefined) {
+        throw new AgentError(
+          "invalid_tool",
+          `cannot search ${target.relative}: it is binary, too large, or unreadable`,
+        );
+      }
+
+      const outcome = evaluateBatch([{ path: target.relative, lines: text.split(/\r?\n/) }], {
+        pattern: input.pattern,
+        flags,
+        maxResults: limit,
+        remainingMs: deadline - Date.now(),
+      });
+
+      const fileBody =
+        outcome.matches.length === 0
+          ? `No matches for /${input.pattern}/ in ${target.relative}`
+          : outcome.matches.join("\n") +
+            (outcome.truncated ? `\n… [stopped at ${limit} matches]` : "");
+
+      return toolOutput(fileBody, {
+        pattern: input.pattern,
+        matchCount: outcome.matches.length,
+        filesScanned: 1,
+        filesWalked: 1,
+        truncated: outcome.truncated,
+        walkStoppedEarly: false,
+      });
+    }
+
+    const root = target.absolute;
 
     const matches: string[] = [];
     let filesScanned = 0;
