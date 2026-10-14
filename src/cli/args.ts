@@ -169,7 +169,7 @@ export function usageText(): string {
     "Options:",
     "  -m, --model <provider/model>  Model to use (default: first authenticated)",
     "      --cwd <dir>               Workspace root (default: current directory)",
-    "      --read-only               Expose only read, ls and grep",
+    "      --read-only               Expose only read, ls, grep and find",
     "      --no-bash                 Remove bash from the tool set",
     "      --tools <a,b,c>           Explicit tool selection",
     "      --max-iterations <n>      Iteration budget (default: 24)",
