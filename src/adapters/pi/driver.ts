@@ -37,7 +37,7 @@ import {
   type EventDraft,
   type ToolPort,
 } from "../../core/contracts.ts";
-import { createGatedToolPort, type GatePolicy } from "../../core/gate.ts";
+import { createGatedToolPort, isApproval, type GatePolicy } from "../../core/gate.ts";
 import type { HumanInputChannel } from "../../core/contracts.ts";
 import type { RunDriver } from "../../core/loop.ts";
 import { assistantReplyEntry } from "../../core/transcript.ts";
@@ -189,12 +189,22 @@ export function piDriver(options: PiDriverOptions): RunDriver {
       signalWork();
     };
 
-    const toolPort = resolveToolPort(options, ctx.humanInput, {
-      // Surfaced as the same events the Core loop emits for a confirmation, so a
-      // reader of the trace cannot tell which path asked.
-      onRequested: (question) => enqueue({ type: "human_input_requested", question }),
-      onAnswered: (input) => enqueue({ type: "human_input_received", input }),
-    });
+    /**
+     * Starts held back pending approval.
+     *
+     * The SDK fires `tool_execution_start` *before* calling `execute`, so a gated action
+     * would otherwise be reported as started before anyone approved it. The Skill's
+     * confirm-gate contract is explicit that a dangerous tool must not emit
+     * `tool_started` until it is cleared, and the Core loop already asks first — so
+     * without this the two paths disagreed about the order of the same events.
+     */
+    const toolStartGate = new ToolStartGate(options.gate, options.cwd);
+
+    const toolPort = resolveToolPort(
+      options,
+      ctx.humanInput,
+      gateChannelFor(toolStartGate, enqueue),
+    );
 
     const plan = buildPiSessionOptions({ ...options, toolPort });
     if (plan.diagnostics.length > 0) options.onDiagnostics?.(plan.diagnostics);
@@ -242,9 +252,11 @@ export function piDriver(options: PiDriverOptions): RunDriver {
 
     const unsubscribe = session.subscribe((event: SessionEvent) => {
       try {
-        for (const draft of normalizeSessionEvent(event, state, scratch, ctx.now)) {
-          enqueue(draft);
-        }
+        forwardNormalized(
+          normalizeSessionEvent(event, state, scratch, ctx.now),
+          toolStartGate,
+          enqueue,
+        );
         if (event.type === "tool_execution_start" || event.type === "agent_end") {
           enforceBudgets();
         }
@@ -348,4 +360,86 @@ function assertToolSurface(active: readonly string[], expected: ReadonlySet<stri
       `refusing to run: the model would be offered tools we did not define: ${unexpected.join(", ")}`,
     );
   }
+}
+
+/**
+ * Withholds `tool_started` for actions awaiting approval.
+ *
+ * The SDK fires `tool_execution_start` *before* calling `execute`, so a gated action
+ * would otherwise be reported as started before anyone approved it. The Skill's
+ * confirm-gate contract is explicit that a dangerous tool must not emit `tool_started`
+ * until it is cleared, and the Core loop already asks first — without this the two paths
+ * disagreed about the order of the same events.
+ *
+ * Extracted rather than left inline in the subscription callback, because inline it
+ * could only be exercised by a live provider turn.
+ */
+export class ToolStartGate {
+  private held: EventDraft[] = [];
+
+  constructor(
+    private readonly policy: GatePolicy | undefined,
+    private readonly cwd: string,
+  ) {}
+
+  /** Whether the policy requires approval for one action. Pure, so it is safe to re-ask. */
+  requiresApproval(name: string, args: unknown): boolean {
+    if (this.policy === undefined) return false;
+    const verdict = this.policy(
+      { name, arguments: (args ?? {}) as Record<string, unknown> },
+      { cwd: this.cwd },
+    );
+    return !verdict.allow;
+  }
+
+  /** Returns true when the draft was withheld rather than forwarded. */
+  withholdIfGated(draft: EventDraft): boolean {
+    if (draft.type !== "tool_started") return false;
+    if (!this.requiresApproval(draft.toolName, draft.args)) return false;
+    this.held.push(draft);
+    return true;
+  }
+
+  /** The held starts when approved; nothing when declined, because it never started. */
+  settle(approved: boolean): EventDraft[] {
+    const released = this.held;
+    this.held = [];
+    return approved ? released : [];
+  }
+
+  get pending(): number {
+    return this.held.length;
+  }
+}
+
+/**
+ * Route normalized drafts to the event stream, holding back a gated action's start.
+ *
+ * Exported with `gateChannelFor` so the confirmation wiring is exercised by tests rather
+ * than mirrored by them — a hand-copied duplicate in a test proves only that the copy
+ * agrees with itself.
+ */
+export function forwardNormalized(
+  drafts: readonly EventDraft[],
+  toolStartGate: ToolStartGate,
+  emit: (draft: EventDraft) => void,
+): void {
+  for (const draft of drafts) {
+    if (toolStartGate.withholdIfGated(draft)) continue;
+    emit(draft);
+  }
+}
+
+/** The callbacks the gate reports through, in the order the Core loop emits them. */
+export function gateChannelFor(
+  toolStartGate: ToolStartGate,
+  emit: (draft: EventDraft) => void,
+): { onRequested: (question: string) => void; onAnswered: (input: unknown) => void } {
+  return {
+    onRequested: (question) => emit({ type: "human_input_requested", question }),
+    onAnswered: (input) => {
+      emit({ type: "human_input_received", input });
+      for (const held of toolStartGate.settle(isApproval(input))) emit(held);
+    },
+  };
 }

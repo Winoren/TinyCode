@@ -19,10 +19,17 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createAgentSession } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
 
-import { toolOutput, type ToolIntent, type ToolPort } from "../src/core/contracts.ts";
+import { toolOutput, type EventDraft, type ToolIntent, type ToolPort } from "../src/core/contracts.ts";
 import { allowAllPolicy, destructiveCommandPolicy } from "../src/core/gate.ts";
 import { buildSystemPrompt } from "../src/adapters/pi/system-prompt.ts";
-import { buildPiSessionOptions, piDriver, resolveToolPort } from "../src/adapters/pi/driver.ts";
+import {
+  ToolStartGate,
+  buildPiSessionOptions,
+  forwardNormalized,
+  gateChannelFor,
+  piDriver,
+  resolveToolPort,
+} from "../src/adapters/pi/driver.ts";
 import { definePiTools } from "../src/adapters/pi/tools.ts";
 import { toParameters } from "../src/adapters/pi/schema.ts";
 import { CODING_TOOLS, READ_ONLY_TOOLS } from "../src/tools/index.ts";
@@ -318,5 +325,96 @@ describe("gate wiring on the SDK path", () => {
     // Even with no channel, an allow-all policy permits the call.
     await resolved.execute({ name: "bash", arguments: { command: "rm -rf .." } }, signal);
     expect(port.seen).toHaveLength(1);
+  });
+});
+
+describe("a gated action is not reported as started before it is approved", () => {
+  const cwd = "/workspace";
+  const start = (command: string): EventDraft => ({
+    type: "tool_started",
+    toolCallId: "c1",
+    toolName: "bash",
+    args: { command },
+  });
+
+  it("withholds the start of an action the policy gates", () => {
+    const gate = new ToolStartGate(destructiveCommandPolicy(), cwd);
+    expect(gate.withholdIfGated(start("rm -rf .."))).toBe(true);
+    expect(gate.pending).toBe(1);
+  });
+
+  it("forwards an ordinary action immediately", () => {
+    const gate = new ToolStartGate(destructiveCommandPolicy(), cwd);
+    expect(gate.withholdIfGated(start("npm test"))).toBe(false);
+    expect(gate.pending).toBe(0);
+  });
+
+  it("forwards everything when no policy is configured", () => {
+    const gate = new ToolStartGate(undefined, cwd);
+    expect(gate.withholdIfGated(start("rm -rf .."))).toBe(false);
+  });
+
+  it("does not withhold events that are not starts", () => {
+    const gate = new ToolStartGate(destructiveCommandPolicy(), cwd);
+    expect(
+      gate.withholdIfGated({ type: "text_delta", delta: "hi" }),
+    ).toBe(false);
+  });
+
+  it("releases the held start on approval", () => {
+    const gate = new ToolStartGate(destructiveCommandPolicy(), cwd);
+    gate.withholdIfGated(start("git push --force"));
+
+    expect(gate.settle(true)).toEqual([start("git push --force")]);
+    expect(gate.pending).toBe(0);
+  });
+
+  it("discards the held start on a refusal, because it never started", () => {
+    const gate = new ToolStartGate(destructiveCommandPolicy(), cwd);
+    gate.withholdIfGated(start("rm -rf .."));
+
+    expect(gate.settle(false)).toEqual([]);
+    expect(gate.pending).toBe(0);
+  });
+
+  it("emits the confirmation round trip in the Core loop's order", () => {
+    const emitted: EventDraft[] = [];
+    const gate = new ToolStartGate(destructiveCommandPolicy(), cwd);
+    const channel = gateChannelFor(gate, (draft) => emitted.push(draft));
+
+    forwardNormalized(
+      [
+        { type: "decision_made", decision: { kind: "call_tool", intent: { name: "bash", arguments: {} } } },
+        start("git push --force"),
+      ],
+      gate,
+      (draft) => emitted.push(draft),
+    );
+
+    channel.onRequested("Run it?");
+    channel.onAnswered("yes");
+
+    // Exactly the Core loop's order: ask first, then report the start.
+    expect(emitted.map((draft) => draft.type)).toEqual([
+      "decision_made",
+      "human_input_requested",
+      "human_input_received",
+      "tool_started",
+    ]);
+  });
+
+  it("omits the start entirely when the answer is not consent", () => {
+    const emitted: EventDraft[] = [];
+    const gate = new ToolStartGate(destructiveCommandPolicy(), cwd);
+    const channel = gateChannelFor(gate, (draft) => emitted.push(draft));
+
+    forwardNormalized([start("rm -rf ..")], gate, (draft) => emitted.push(draft));
+    channel.onRequested("Run it?");
+    channel.onAnswered("no");
+
+    expect(emitted.map((draft) => draft.type)).toEqual([
+      "human_input_requested",
+      "human_input_received",
+    ]);
   });
 });

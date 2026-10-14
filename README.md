@@ -116,6 +116,7 @@ source, so regenerating an unchanged build produces no diff.
 | A restart recovers state, and replay rebuilds it exactly | `runtime — persistence`, `core loop — replay equivalence` |
 | The Pi path's live state equals what replay reconstructs from its events | `pi-normalize — state mutation agrees with replay` |
 | The real and fake paths produce the same semantic event sequence | `pi-normalize — the real and fake paths agree on Core semantics` |
+| A gated action is not reported as started before it is approved, on either path | `pi-adapter — a gated action is not reported as started before it is approved` |
 | Budgets terminate a run predictably | `core loop — budgets and termination`, and the Pi driver enforces turns and tool calls itself |
 | A model-supplied regex cannot hang the run past its budget | `grep — interrupts a catastrophically backtracking pattern` |
 | `run_completed` distinguishes `complete` from `partial` | `cli — end-to-end vertical slice` |

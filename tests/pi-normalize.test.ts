@@ -23,6 +23,12 @@ import {
 } from "../src/core/contracts.ts";
 import { fakeTools, scriptedModel } from "../src/adapters/fake/index.ts";
 import { coreLoopDriver, type DriverContext } from "../src/core/loop.ts";
+import { destructiveCommandPolicy } from "../src/core/gate.ts";
+import {
+  ToolStartGate,
+  forwardNormalized,
+  gateChannelFor,
+} from "../src/adapters/pi/driver.ts";
 import { replayAgentState } from "../src/core/replay.ts";
 import {
   classifyErrorStop,
@@ -482,5 +488,83 @@ describe("the real and fake paths agree on Core semantics", () => {
     expect(status).toBe("partial");
     expect(missingMaterial).toEqual(["deploy"]);
     expect(content).toBe("Cannot deploy.");
+  });
+});
+
+describe("the two paths also agree when a confirmation is involved", () => {
+  const PRESENTATION_ONLY = new Set(["text_delta", "thinking_delta"]);
+  const strip = (drafts: readonly EventDraft[]): string[] =>
+    drafts.map((draft) => draft.type).filter((type) => !PRESENTATION_ONLY.has(type));
+
+  it("asks before reporting a start, in the same order as the Core loop", async () => {
+    // --- the deterministic path, gated ---
+    const coreDrafts: EventDraft[] = [];
+    let tick = 0;
+    const ctx: DriverContext = {
+      budget: { ...DEFAULT_BUDGET },
+      signal: new AbortController().signal,
+      now: () => (tick += 1),
+      newToolCallId: () => `c${tick}`,
+      humanInput: async () => "yes",
+      model: "test-model",
+    };
+    const driver = coreLoopDriver({
+      model: scriptedModel([
+        {
+          kind: "call_tool",
+          intent: { name: "bash", arguments: { command: "git push --force" } },
+        },
+        { kind: "respond", content: "Pushed." },
+      ]),
+      tools: fakeTools({ bash: () => "pushed" }),
+      gate: destructiveCommandPolicy(),
+    });
+    for await (const draft of driver(initialState(TASK), ctx)) coreDrafts.push(draft);
+
+    // --- the SDK path, composed from the very functions the driver uses ---
+    const harness = makeHarness();
+    harness.scratch.model = "test-model";
+    const emitted: EventDraft[] = [];
+    const toolStartGate = new ToolStartGate(destructiveCommandPolicy(), TASK.cwd);
+    const channel = gateChannelFor(toolStartGate, (draft) => emitted.push(draft));
+    const forward = (event: unknown): void => {
+      const normalized = normalizeSessionEvent(
+        event as SessionEvent,
+        harness.state,
+        harness.scratch,
+        harness.now,
+      );
+      forwardNormalized(normalized, toolStartGate, (draft) => emitted.push(draft));
+    };
+
+    forward({ type: "turn_start" });
+    forward(toolStart("c1", "bash", { command: "git push --force" }));
+    // The gate asks, in the middle of what the SDK already considers a started call.
+    channel.onRequested("Run it?");
+    channel.onAnswered("yes");
+    forward(toolEnd("c1", "bash", successEnvelope("pushed")));
+    forward({ type: "turn_end" });
+    forward({ type: "turn_start" });
+    forward(textDelta("Pushed."));
+    forward({
+      type: "agent_end",
+      willRetry: false,
+      messages: [{ role: "assistant", stopReason: "stop", usage: { input: 1, output: 1 } }],
+    });
+
+    const content = finalAnswerText(harness.scratch);
+    harness.state.transcript.push({ role: "assistant", text: content });
+    emitted.push({ type: "decision_made", decision: { kind: "respond", content } });
+    emitted.push({
+      type: "usage_reported",
+      usage: toUsageReport(harness.scratch.usage, harness.state.toolCalls, 1, "test-model"),
+    });
+    emitted.push({ type: "run_completed", status: "complete", result: content });
+
+    expect(strip(emitted)).toEqual(strip(coreDrafts));
+    // And the ordering the Skill's confirm-gate contract requires.
+    expect(strip(emitted).indexOf("tool_started")).toBeGreaterThan(
+      strip(emitted).indexOf("human_input_received"),
+    );
   });
 });
