@@ -250,6 +250,66 @@ describe("edit", () => {
     expect(await fs.readFile(path.join(cwd, "a.ts"), "utf8")).toBe("bar\nbar\n");
   });
 
+  it("can edit a CRLF file using the text read showed", async () => {
+    const cwd = await makeWorkspace();
+    // A file that came from a Windows checkout.
+    await fs.writeFile(path.join(cwd, "win.ts"), "const a = 1;\r\nconst b = 2;\r\n", "utf8");
+
+    const shown = await run(readTool, { path: "win.ts" }, cwd);
+    expect(shown.content).toContain("const a = 1;");
+    // read normalises for display, so the model only ever saw LF text.
+    expect(shown.content).not.toContain("\r");
+
+    // The model can only pass back what it was shown.
+    const edited = await run(
+      editTool,
+      {
+        path: "win.ts",
+        oldString: "const a = 1;\nconst b = 2;",
+        newString: "const a = 1;\nconst b = 3;",
+      },
+      cwd,
+    );
+
+    expect(edited.content).toContain("Replaced 1 occurrence");
+    expect(edited.details).toMatchObject({ lineEndings: "adapted to CRLF" });
+
+    // The point: the edit lands, and the file keeps its CRLF endings rather than being
+    // silently converted to LF (or left unmatchable).
+    expect(await fs.readFile(path.join(cwd, "win.ts"), "utf8")).toBe(
+      "const a = 1;\r\nconst b = 3;\r\n",
+    );
+  });
+
+  it("prefers an exact match and leaves LF files alone", async () => {
+    const cwd = await makeWorkspace();
+    await fs.writeFile(path.join(cwd, "unix.ts"), "alpha\nbravo\n", "utf8");
+
+    const edited = await run(
+      editTool,
+      { path: "unix.ts", oldString: "bravo", newString: "charlie" },
+      cwd,
+    );
+
+    expect(edited.details).toMatchObject({ lineEndings: "exact" });
+    expect(await fs.readFile(path.join(cwd, "unix.ts"), "utf8")).toBe("alpha\ncharlie\n");
+  });
+
+  it("adapts an LF quote when the file uses CRLF, and the reverse", async () => {
+    const cwd = await makeWorkspace();
+    // A file stored with LF, quoted by a model that included carriage returns.
+    await fs.writeFile(path.join(cwd, "unix.ts"), "alpha\nbravo\n", "utf8");
+
+    const edited = await run(
+      editTool,
+      { path: "unix.ts", oldString: "alpha\r\nbravo", newString: "alpha\r\ncharlie" },
+      cwd,
+    );
+
+    expect(edited.details).toMatchObject({ lineEndings: "adapted to LF" });
+    expect(await fs.readFile(path.join(cwd, "unix.ts"), "utf8")).toBe("alpha\ncharlie\n");
+  });
+
   it("reports a missing target string as invalid_tool", async () => {
     const cwd = await makeWorkspace();
     await fs.writeFile(path.join(cwd, "a.ts"), "alpha\n", "utf8");

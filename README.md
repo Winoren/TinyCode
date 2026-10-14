@@ -123,6 +123,7 @@ source, so regenerating an unchanged build produces no diff.
 | Tools cannot escape the workspace, including via symlinks | `workspace boundary` |
 | A gated action cannot run unapproved, and a refusal is visible, not silent | `gate.test.ts` — policy boundaries and `core loop — the gate decides` |
 | A non-zero exit code is information, not a tool failure | `bash` |
+| A CRLF file is editable using the text `read` showed | `edit — can edit a CRLF file using the text read showed` |
 
 The load-bearing end-to-end test runs `bootstrap()` — the same assembly the CLI uses —
 against a real temp workspace with the **real tools, real Runtime and real JSONL run

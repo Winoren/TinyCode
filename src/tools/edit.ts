@@ -48,7 +48,26 @@ export const editTool: ToolDefinition<EditInput> = {
       throw error;
     }
 
-    const occurrences = countOccurrences(original, input.oldString);
+    // Exact match first: never rewrite text the model quoted verbatim.
+    let needle = input.oldString;
+    let replacement = input.newString;
+    let adaptation = "exact";
+    let occurrences = countOccurrences(original, needle);
+
+    if (occurrences === 0) {
+      // The model can only pass back what `read` showed it, and `read` normalises line
+      // endings for display. Without this, every CRLF file — anything from a Windows
+      // checkout — was uneditable, because the raw bytes never contained the text the
+      // model was shown.
+      const adapted = adaptToFileLineEndings(original, input.oldString, input.newString);
+      const adaptedOccurrences = countOccurrences(original, adapted.oldString);
+      if (adaptedOccurrences > 0) {
+        needle = adapted.oldString;
+        replacement = adapted.newString;
+        adaptation = adapted.note;
+        occurrences = adaptedOccurrences;
+      }
+    }
 
     if (occurrences === 0) {
       throw new AgentError(
@@ -66,8 +85,8 @@ export const editTool: ToolDefinition<EditInput> = {
 
     const updated =
       input.replaceAll === true
-        ? original.split(input.oldString).join(input.newString)
-        : original.replace(input.oldString, input.newString);
+        ? original.split(needle).join(replacement)
+        : original.replace(needle, replacement);
 
     await fs.writeFile(absolute, updated, "utf8");
 
@@ -76,6 +95,7 @@ export const editTool: ToolDefinition<EditInput> = {
       path: input.path,
       replaced,
       occurrences,
+      lineEndings: adaptation,
     });
   },
 };
@@ -83,4 +103,43 @@ export const editTool: ToolDefinition<EditInput> = {
 function countOccurrences(haystack: string, needle: string): number {
   if (needle === "") return 0;
   return haystack.split(needle).length - 1;
+}
+
+/**
+ * Adapt a quoted snippet to the file's own line endings.
+ *
+ * Only the needle and the replacement are converted; the rest of the file is left
+ * byte-for-byte alone. Rewriting the whole file to a normalised form would turn a
+ * one-token edit into a full-file diff, which is a much worse failure than the one
+ * being fixed.
+ */
+function adaptToFileLineEndings(
+  original: string,
+  oldString: string,
+  newString: string,
+): { oldString: string; newString: string; note: string } {
+  if (original.includes("\r\n") && !oldString.includes("\r\n")) {
+    return {
+      oldString: toCrlf(oldString),
+      newString: toCrlf(newString),
+      note: "adapted to CRLF",
+    };
+  }
+  if (!original.includes("\r\n") && oldString.includes("\r\n")) {
+    return {
+      oldString: toLf(oldString),
+      newString: toLf(newString),
+      note: "adapted to LF",
+    };
+  }
+  return { oldString, newString, note: "exact" };
+}
+
+/** Normalise first, so an already-converted string is not double-converted. */
+function toCrlf(text: string): string {
+  return toLf(text).replace(/\n/g, "\r\n");
+}
+
+function toLf(text: string): string {
+  return text.replace(/\r\n/g, "\n");
 }
