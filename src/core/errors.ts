@@ -41,7 +41,11 @@ const PATTERN_RULES: readonly PatternRule[] = [
   { code: "timeout", pattern: /ETIMEDOUT|ESOCKETTIMEDOUT|timed? ?out|timeout/i },
 
   // --- tool-argument faults (not retryable) ---
-  { code: "invalid_tool", pattern: /invalid (tool )?(arguments|parameters)|schema validation|zod/i },
+  {
+    code: "invalid_tool",
+    pattern:
+      /unknown tool|not in allowlist|invalid (tool )?(arguments|parameters)|schema validation|zod/i,
+  },
 ];
 
 function messageOf(error: unknown): string {

@@ -162,6 +162,43 @@ identically.
 - `DefaultResourceLoader` does **not** auto-load: `await resourceLoader.reload()` is
   required or nothing is discovered. Noted as the Skill's "high-frequency trap".
 
+### 2.7 Tool surface selection — a measured correction
+
+Our tool names (`read`, `write`, `edit`, `bash`, `ls`, `grep`) **collide with pi's
+built-ins**. If a built-in stayed active, the model could call a `bash` that never
+passes through `src/tools/paths.ts`, silently voiding the workspace boundary.
+
+The docs suggest `noTools: "builtin"` is "the default posture for a vertical agent".
+Reading `dist/core/sdk.js:134-137`:
+
+```js
+const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
+const initialActiveToolNames =
+  options.tools ?? (options.noTools ? [] : (configuredDefaultToolNames ?? defaultActiveToolNames));
+```
+
+and `_refreshToolRegistry` (`dist/core/agent-session.js:1940`), where custom tools are
+written into the registry **by name, overwriting built-ins**.
+
+Measured with `scripts/probe-session.mjs` against 0.84.2, using
+`getActiveToolNames()` (what the model is actually offered) rather than
+`getAllTools()` (the registry):
+
+| Configuration | Offered to the model | Registry residue |
+|---|---|---|
+| `tools: [ours]` | exactly our 6, all resolving to our definitions | none |
+| `noTools: "builtin"` | our 6 | built-in `find` remains registered |
+| defaults | our 6 | built-in `find` remains registered |
+| `noTools: "all"` | **empty** — custom tools are disabled too | — |
+| `excludeTools: [ours]` | empty | `find` |
+
+**Adopted: an explicit `tools` allowlist**, the only configuration where the registry
+and the active set are both exactly our tools. `noTools: "all"` is actively harmful
+here. As defence in depth the driver also asserts at runtime that every active tool
+resolves to one of our definitions and refuses to run otherwise
+(`assertToolSurface` in `src/adapters/pi/driver.ts`) — a name collision makes "which
+definition is live" a question worth re-asking on every SDK upgrade.
+
 ## 3. The mapping
 
 | TinyCode Core contract | Pi Agent SDK grounding | Notes |

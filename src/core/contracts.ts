@@ -44,7 +44,8 @@ export interface Observation {
   name: string;
   ok: boolean;
   result?: unknown;
-  error?: { code: string; message: string };
+  /** Uses the run-error taxonomy, so a tool failure and a run failure share a vocabulary. */
+  error?: RunError;
   durationMs: number;
   observedAt: number;
 }
