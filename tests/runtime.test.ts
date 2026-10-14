@@ -413,6 +413,42 @@ function flakyDriver(failures: number, error: RunError): RunDriver {
 const RETRYABLE: RunError = { code: "provider_unavailable", message: "503 Service Unavailable" };
 const NOT_RETRYABLE: RunError = { code: "auth", message: "401 Unauthorized" };
 
+describe("runtime — a signal that is already aborted", () => {
+  it("cancels immediately without asking the model anything", async () => {
+    const model = scriptedModel([{ kind: "respond", content: "should never be produced" }]);
+    const { runtime } = await makeRuntime(
+      coreLoopDriver({ model, tools: fakeTools({ read: () => "body" }) }),
+    );
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const events = await collect(runtime.run(TASK, controller.signal));
+
+    expect(terminals(events)).toHaveLength(1);
+    expect(terminals(events)[0]?.type).toBe("run_cancelled");
+    // The model was never consulted, so no work was started at all.
+    expect(model.calls).toBe(0);
+    expect(events.some((event) => event.type === "tool_started")).toBe(false);
+  });
+
+  it("records the run as cancelled rather than leaving it running", async () => {
+    const { runtime, runLog } = await makeRuntime(
+      coreLoopDriver({
+        model: scriptedModel([{ kind: "respond", content: "x" }]),
+        tools: fakeTools({}),
+      }),
+    );
+    const controller = new AbortController();
+    controller.abort();
+
+    const events = await collect(runtime.run(TASK, controller.signal));
+    const runId = events[0]?.runId as string;
+
+    expect((await runLog.loadRun(runId))?.status).toBe("cancelled");
+  });
+});
+
 describe("runtime — bounded, visible retry", () => {
   it("retries a retryable failure and completes", async () => {
     const { runtime } = await makeRuntime(flakyDriver(2, RETRYABLE), {
