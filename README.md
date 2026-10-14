@@ -99,7 +99,7 @@ source, so regenerating an unchanged build produces no diff.
 | A tool failure is visible and does not corrupt other state | `core loop — refusal and isolation` |
 | Cancellation stops work and is never retried, and is distinct from a timeout | `runtime — termination is never fabricated` |
 | A restart recovers state, and replay rebuilds it exactly | `runtime — persistence`, `core loop — replay equivalence` |
-| Budgets terminate a run predictably | `core loop — budgets and termination` |
+| Budgets terminate a run predictably | `core loop — budgets and termination`, and the Pi driver enforces turns and tool calls itself |
 | `run_completed` distinguishes `complete` from `partial` | `cli — end-to-end vertical slice` |
 | Usage is reported, or explicitly unknown — never a fabricated zero | `event rendering` |
 | Tools cannot escape the workspace, including via symlinks | `workspace boundary` |
@@ -145,6 +145,10 @@ Honest gaps, not a backlog:
    it, so it does not claim to.
 5. **No compaction, sub-agents, MCP or permissions UI.** Each was postponed until a
    real task demonstrates the need.
+6. **The Pi path's budget enforcement is unverified against a live model.** It is
+   implemented and type-checked, but the code path that trips it only runs during a
+   real provider turn, which this environment cannot execute. The deterministic path's
+   equivalent is covered by tests.
 
 ## Corrections to the Skill
 
