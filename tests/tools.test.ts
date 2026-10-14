@@ -520,6 +520,20 @@ describe("respecting .gitignore", () => {
     expect(result.content).not.toContain("generated");
   });
 
+  it("returns a path that read can open directly", async () => {
+    const cwd = await makeWorkspace();
+    await fs.mkdir(path.join(cwd, "src", "deep"), { recursive: true });
+    await fs.writeFile(path.join(cwd, "src", "deep", "target.ts"), "const marker = 1;\n", "utf8");
+
+    // The search starts at `src`, so the result must still name a path `read` accepts —
+    // `deep/target.ts` would resolve to a file that does not exist.
+    const found = await run(findTool, { pattern: "*.ts", path: "src" }, cwd);
+    const reportedPath = found.content.split("\n")[0] ?? "";
+
+    const opened = await run(readTool, { path: reportedPath }, cwd);
+    expect(opened.content).toContain("marker");
+  });
+
   it("keeps grep consistent with find", async () => {
     const cwd = await repo("target/\n");
     await fs.writeFile(path.join(cwd, "target", "debug", "gen.ts"), "needle\n", "utf8");
