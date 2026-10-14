@@ -6,8 +6,16 @@
  * that quietly grants write access would be a security bug, not a convenience.
  */
 
-export const ALL_TOOL_NAMES = ["read", "write", "edit", "ls", "grep", "bash"] as const;
-export const READ_ONLY_TOOL_NAMES = ["read", "ls", "grep"] as const;
+export const ALL_TOOL_NAMES = [
+  "read",
+  "write",
+  "edit",
+  "ls",
+  "grep",
+  "find",
+  "bash",
+] as const;
+export const READ_ONLY_TOOL_NAMES = ["read", "ls", "grep", "find"] as const;
 export const DEFAULT_TOOL_NAMES: readonly string[] = ALL_TOOL_NAMES;
 
 export interface CliOptions {

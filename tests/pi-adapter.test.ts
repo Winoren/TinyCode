@@ -196,10 +196,12 @@ describe("session tool surface (integration, no model required)", () => {
     const { session } = await createAgentSession(plan.sessionOptions);
     try {
       const active = session.getActiveToolNames();
-      expect([...active].sort()).toEqual(["grep", "ls", "read"]);
+      expect([...active].sort()).toEqual(["find", "grep", "ls", "read"]);
       expect(active).not.toContain("bash");
       expect(active).not.toContain("write");
       expect(active).not.toContain("edit");
+      // `find` is read-only: it locates files without touching them.
+      expect(active).toContain("find");
     } finally {
       session.dispose();
     }

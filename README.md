@@ -120,6 +120,7 @@ source, so regenerating an unchanged build produces no diff.
 | A gated action is not reported as started before it is approved, on either path | `pi-adapter — a gated action is not reported as started before it is approved` |
 | Budgets terminate a run predictably | `core loop — budgets and termination`, and the Pi driver enforces turns and tool calls itself |
 | A model-supplied regex cannot hang the run past its budget | `grep — interrupts a catastrophically backtracking pattern` |
+| A file can be located by name even with write and shell tools withheld | `find` — bare patterns match the name anywhere, slash patterns match the path |
 | `run_completed` distinguishes `complete` from `partial` | `cli — end-to-end vertical slice` |
 | Usage is reported, or explicitly unknown — never a fabricated zero | `event rendering` |
 | Tools cannot escape the workspace, including via symlinks | `workspace boundary` |

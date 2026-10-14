@@ -8,6 +8,7 @@
 
 import { bashTool } from "./bash.ts";
 import { editTool } from "./edit.ts";
+import { findTool } from "./find.ts";
 import { grepTool } from "./grep.ts";
 import { lsTool } from "./ls.ts";
 import { readTool } from "./read.ts";
@@ -18,7 +19,7 @@ export { createToolRegistry } from "./registry.ts";
 export type { AnyToolDefinition, ToolContext, ToolDefinition } from "./types.ts";
 
 /** Inspection only — cannot change the workspace. */
-export const READ_ONLY_TOOLS: readonly AnyToolDefinition[] = [readTool, lsTool, grepTool];
+export const READ_ONLY_TOOLS: readonly AnyToolDefinition[] = [readTool, lsTool, grepTool, findTool];
 
 /**
  * The full coding surface.
@@ -33,6 +34,7 @@ export const CODING_TOOLS: readonly AnyToolDefinition[] = [
   editTool,
   lsTool,
   grepTool,
+  findTool,
   bashTool,
 ];
 

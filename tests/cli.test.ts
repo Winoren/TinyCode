@@ -39,16 +39,16 @@ describe("argument parsing", () => {
 
     expect(options.task).toBe("fix the bug");
     expect(options.cwd).toBe(process.cwd());
-    expect(options.tools).toEqual(["read", "write", "edit", "ls", "grep", "bash"]);
+    expect(options.tools).toEqual(["read", "write", "edit", "ls", "grep", "find", "bash"]);
     expect(options.json).toBe(false);
   });
 
   it("restricts the tool set for --read-only", () => {
-    expect(parseArgs(["--read-only", "look"]).tools).toEqual(["read", "ls", "grep"]);
+    expect(parseArgs(["--read-only", "look"]).tools).toEqual(["read", "ls", "grep", "find"]);
   });
 
   it("removes bash for --no-bash without disturbing the rest", () => {
-    expect(parseArgs(["--no-bash", "look"]).tools).toEqual(["read", "write", "edit", "ls", "grep"]);
+    expect(parseArgs(["--no-bash", "look"]).tools).toEqual(["read", "write", "edit", "ls", "grep", "find"]);
   });
 
   it("rejects an unknown option instead of ignoring it", () => {
@@ -67,7 +67,7 @@ describe("argument parsing", () => {
   it("treats everything after -- as the task, even flag-like words", () => {
     const options = parseArgs(["--read-only", "--", "--not-a-flag", "please"]);
     expect(options.task).toBe("--not-a-flag please");
-    expect(options.tools).toEqual(["read", "ls", "grep"]);
+    expect(options.tools).toEqual(["read", "ls", "grep", "find"]);
   });
 
   it("parses numeric budgets and rejects non-numbers", () => {

@@ -15,6 +15,7 @@ import { bashTool } from "../src/tools/bash.ts";
 import { editTool } from "../src/tools/edit.ts";
 import { REGEX_TOTAL_BUDGET_MS, emptySearchMessage, grepTool } from "../src/tools/grep.ts";
 import { walkFiles } from "../src/tools/walk.ts";
+import { emptyFindMessage, findTool } from "../src/tools/find.ts";
 import { lsTool } from "../src/tools/ls.ts";
 import { resolveWithinWorkspace } from "../src/tools/paths.ts";
 import { MAX_IN_MEMORY_BYTES, readTool } from "../src/tools/read.ts";
@@ -486,6 +487,81 @@ describe("an honest negative result", () => {
 
     expect(complete).toBe("No matches for /needle/");
     expect(complete).not.toContain("NOT a complete");
+  });
+});
+
+describe("find", () => {
+  async function scaffold(): Promise<string> {
+    const cwd = await makeWorkspace();
+    await fs.mkdir(path.join(cwd, "src", "deep"), { recursive: true });
+    await fs.mkdir(path.join(cwd, "node_modules", "dep"), { recursive: true });
+    await fs.writeFile(path.join(cwd, "top.test.ts"), "", "utf8");
+    await fs.writeFile(path.join(cwd, "src", "a.ts"), "", "utf8");
+    await fs.writeFile(path.join(cwd, "src", "a.test.ts"), "", "utf8");
+    await fs.writeFile(path.join(cwd, "src", "deep", "b.ts"), "", "utf8");
+    await fs.writeFile(path.join(cwd, "node_modules", "dep", "c.ts"), "", "utf8");
+    return cwd;
+  }
+
+  it("matches a bare name pattern against the file name anywhere in the tree", async () => {
+    const cwd = await scaffold();
+
+    // A `*.test.ts` that only matched the workspace root would be useless, and would
+    // push the model back to shelling out.
+    const result = await run(findTool, { pattern: "*.test.ts" }, cwd);
+
+    const lines = result.content.split("\n").filter((line) => line.endsWith(".test.ts"));
+    expect(lines.sort()).toEqual(["src/a.test.ts", "top.test.ts"]);
+  });
+
+  it("matches a pattern containing a slash against the whole relative path", async () => {
+    const cwd = await scaffold();
+
+    expect((await run(findTool, { pattern: "src/*.ts" }, cwd)).content.split("\n").sort()).toEqual([
+      "src/a.test.ts",
+      "src/a.ts",
+    ]);
+
+    const recursive = await run(findTool, { pattern: "src/**/*.ts" }, cwd);
+    expect(recursive.content).toContain("src/deep/b.ts");
+  });
+
+  it("skips dependency directories", async () => {
+    const cwd = await scaffold();
+
+    const result = await run(findTool, { pattern: "*.ts" }, cwd);
+    expect(result.content).not.toContain("node_modules");
+  });
+
+  it("stops at maxResults and says so", async () => {
+    const cwd = await scaffold();
+
+    const result = await run(findTool, { pattern: "*.ts", maxResults: 1 }, cwd);
+
+    expect(result.details).toMatchObject({ matchCount: 1, truncated: true });
+    expect(result.content).toContain("stopped at 1 matches");
+  });
+
+  it("refuses a path outside the workspace", async () => {
+    const cwd = await scaffold();
+    await expect(run(findTool, { pattern: "*.ts", path: "../.." }, cwd)).rejects.toMatchObject({
+      code: "invalid_tool",
+    });
+  });
+
+  it("is honest about whether an empty result was complete", () => {
+    const complete = emptyFindMessage("*.rs", false, { filesYielded: 4, stoppedEarly: false });
+    expect(complete).toBe("no file name matched /*.rs/.");
+
+    const capped = emptyFindMessage("*.rs", false, { filesYielded: 20_000, stoppedEarly: true });
+    expect(capped).toContain("NOT a complete answer");
+    expect(capped).toContain("20000");
+  });
+
+  it("distinguishes a name pattern from a path pattern in its message", () => {
+    const stats = { filesYielded: 2, stoppedEarly: false };
+    expect(emptyFindMessage("a/b", true, stats)).toContain("no file path matched");
+    expect(emptyFindMessage("b", false, stats)).toContain("no file name matched");
   });
 });
 
