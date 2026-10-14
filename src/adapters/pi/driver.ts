@@ -73,6 +73,8 @@ export interface PiDriverOptions {
    * this is the guard that keeps a built-in from silently reappearing.
    */
   verifyToolSurface?: boolean;
+  /** Receives schema-conversion diagnostics so the caller can surface them. */
+  onDiagnostics?: (diagnostics: readonly string[]) => void;
 }
 
 export interface PiSessionPlan {
@@ -129,7 +131,9 @@ export function piDriver(options: PiDriverOptions): RunDriver {
 
   return async function* piDriver(state, ctx) {
     const startedAt = ctx.now();
-    const { session } = await createAgentSession(buildPiSessionOptions(options).sessionOptions);
+    const plan = buildPiSessionOptions(options);
+    if (plan.diagnostics.length > 0) options.onDiagnostics?.(plan.diagnostics);
+    const { session } = await createAgentSession(plan.sessionOptions);
 
     // --- callback → generator bridge -------------------------------------------
     const queue: EventDraft[] = [];

@@ -1,4 +1,9 @@
-export { AgentRuntime, createRuntime, type AgentRuntimeOptions } from "./runtime.ts";
+export {
+  AgentRuntime,
+  createRuntime,
+  defaultIdGenerator,
+  type AgentRuntimeOptions,
+} from "./runtime.ts";
 export { EventRecorder } from "./recorder.ts";
 export {
   InMemoryRunLog,

@@ -219,7 +219,7 @@ function statusForTerminal(type: AgentEvent["type"]): Run["status"] {
 }
 
 /** Monotonic-enough ids without pulling in a uuid dependency. */
-function defaultIdGenerator(): () => string {
+export function defaultIdGenerator(): () => string {
   let counter = 0;
   return () => {
     counter += 1;
