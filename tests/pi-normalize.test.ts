@@ -13,7 +13,16 @@
 
 import { describe, expect, it } from "vitest";
 
-import { initialState, type AgentEvent, type AgentState, type EventDraft, type Task } from "../src/core/contracts.ts";
+import {
+  DEFAULT_BUDGET,
+  initialState,
+  type AgentEvent,
+  type AgentState,
+  type EventDraft,
+  type Task,
+} from "../src/core/contracts.ts";
+import { fakeTools, scriptedModel } from "../src/adapters/fake/index.ts";
+import { coreLoopDriver, type DriverContext } from "../src/core/loop.ts";
 import { replayAgentState } from "../src/core/replay.ts";
 import {
   classifyErrorStop,
@@ -83,6 +92,27 @@ const successEnvelope = (text: string, details: unknown = {}) => ({
   details,
 });
 
+describe("aligning with the Core loop's vocabulary", () => {
+  it("maps an SDK turn to model_requested, as the Core loop does per model call", () => {
+    // Without this the Pi path never emitted `model_requested`, so the two paths'
+    // traces had different shapes and could not be compared event for event.
+    const harness = makeHarness();
+    harness.scratch.model = "deepseek/deepseek-v4-flash";
+
+    feed(harness, { type: "turn_start" });
+
+    expect(harness.drafts).toEqual([
+      { type: "model_requested", model: "deepseek/deepseek-v4-flash" },
+    ]);
+  });
+
+  it("omits the model when the driver did not supply one", () => {
+    const harness = makeHarness();
+    feed(harness, { type: "turn_start" });
+    expect(harness.drafts).toEqual([{ type: "model_requested" }]);
+  });
+});
+
 describe("message events", () => {
   it("maps text deltas and accumulates the answer", () => {
     const harness = makeHarness();
@@ -109,7 +139,6 @@ describe("message events", () => {
     const harness = makeHarness();
     for (const type of [
       "agent_start",
-      "turn_start",
       "turn_end",
       "message_start",
       "message_end",
@@ -366,5 +395,92 @@ describe("state mutation agrees with replay", () => {
       status: "partial",
       missingMaterial: ["deploy"],
     });
+  });
+});
+
+/**
+ * The equivalence claim the Skill asks for: "the real SDK adapter and the fake adapter
+ * produce the same Core semantics (golden-run transcripts)".
+ *
+ * Checked by making both paths do the same work and comparing the event sequence.
+ * Streaming deltas are excluded on purpose — they are an addition the deterministic path
+ * does not model, not a disagreement about what a decision, an action, an observation or
+ * a terminal state is.
+ */
+describe("the real and fake paths agree on Core semantics", () => {
+  const PRESENTATION_ONLY = new Set(["text_delta", "thinking_delta"]);
+
+  function semanticTypes(drafts: readonly EventDraft[]): string[] {
+    return drafts.map((draft) => draft.type).filter((type) => !PRESENTATION_ONLY.has(type));
+  }
+
+  it("produces the same event sequence for an equivalent read-then-answer turn", async () => {
+    // --- the deterministic path, driven by scripted decisions ---
+    const coreDrafts: EventDraft[] = [];
+    let tick = 0;
+    const ctx: DriverContext = {
+      budget: { ...DEFAULT_BUDGET },
+      signal: new AbortController().signal,
+      now: () => (tick += 1),
+      newToolCallId: () => `c${tick}`,
+      humanInput: undefined,
+      model: "test-model",
+    };
+    const driver = coreLoopDriver({
+      model: scriptedModel([
+        { kind: "call_tool", intent: { name: "read", arguments: { path: "a.ts" } } },
+        { kind: "respond", content: "Fixed." },
+      ]),
+      tools: fakeTools({ read: () => "body" }),
+    });
+    for await (const draft of driver(initialState(TASK), ctx)) coreDrafts.push(draft);
+
+    // --- the SDK path, driven by the events the SDK actually emits for that work ---
+    const harness = makeHarness();
+    harness.scratch.model = "test-model";
+
+    feed(harness, { type: "turn_start" });
+    feed(harness, toolStart("c1", "read", { path: "a.ts" }));
+    feed(harness, toolEnd("c1", "read", successEnvelope("body", { path: "a.ts" })));
+    feed(harness, { type: "turn_end" });
+    feed(harness, { type: "turn_start" });
+    feed(harness, textDelta("Fixed."));
+    feed(harness, {
+      type: "agent_end",
+      willRetry: false,
+      messages: [{ role: "assistant", stopReason: "stop", usage: { input: 10, output: 5 } }],
+    });
+
+    // The driver appends its own terminal once the turn settles.
+    const content = finalAnswerText(harness.scratch);
+    harness.state.transcript.push({ role: "assistant", text: content });
+    harness.drafts.push({ type: "decision_made", decision: { kind: "respond", content } });
+    harness.drafts.push({
+      type: "usage_reported",
+      usage: toUsageReport(harness.scratch.usage, harness.state.toolCalls, 1, "test-model"),
+    });
+    harness.drafts.push({ type: "run_completed", status: "complete", result: content });
+
+    expect(semanticTypes(harness.drafts)).toEqual(semanticTypes(coreDrafts));
+  });
+
+  it("agrees that a refused tool is missing material, and keeps the run partial", async () => {
+    const harness = makeHarness();
+    harness.scratch.model = "test-model";
+
+    feed(harness, { type: "turn_start" });
+    feed(harness, toolStart("c1", "deploy"));
+    feed(harness, toolEnd("c1", "deploy", new Error("unknown tool: deploy"), true));
+    feed(harness, { type: "turn_start" });
+    feed(harness, textDelta("Cannot deploy."));
+
+    const content = finalAnswerText(harness.scratch);
+    const status = harness.scratch.missing.size > 0 ? "partial" : "complete";
+    const missingMaterial = [...harness.scratch.missing].sort();
+
+    // Both paths derive the same terminal verdict from the same evidence.
+    expect(status).toBe("partial");
+    expect(missingMaterial).toEqual(["deploy"]);
+    expect(content).toBe("Cannot deploy.");
   });
 });

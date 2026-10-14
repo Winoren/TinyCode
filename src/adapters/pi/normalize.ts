@@ -58,6 +58,8 @@ export interface NormalizationScratch {
   missing: Set<string>;
   /** SDK-level model turns, which is what `maxIterations` bounds. */
   turns: number;
+  /** Model label for the trace, supplied by the driver. */
+  model: string | undefined;
 }
 
 export function createNormalizationScratch(): NormalizationScratch {
@@ -70,6 +72,7 @@ export function createNormalizationScratch(): NormalizationScratch {
     usage: undefined,
     missing: new Set(),
     turns: 0,
+    model: undefined,
   };
 }
 
@@ -84,6 +87,16 @@ export function normalizeSessionEvent(
   now: () => number,
 ): EventDraft[] {
   switch (event.type) {
+    case "turn_start": {
+      // An SDK "turn" is one model call plus its tool executions, so this is the SDK's
+      // equivalent of the Core loop asking the model. Without it the Pi path never
+      // emitted `model_requested`, and the two paths' traces were not comparable —
+      // which is exactly what the golden-transcript equivalence check needs them to be.
+      return [
+        { type: "model_requested", ...(scratch.model === undefined ? {} : { model: scratch.model }) },
+      ];
+    }
+
     case "message_update": {
       const inner = event.assistantMessageEvent;
       if (inner.type === "text_delta") {
@@ -175,7 +188,7 @@ export function normalizeSessionEvent(
     }
 
     default:
-      // turn_start/end, message_start/end, queue_update, compaction_*,
+      // turn_end, message_start/end, queue_update, compaction_*,
       // entry_appended, session_info_changed, thinking_level_changed, agent_settled:
       // no product-level meaning that the events above do not already carry.
       return [];

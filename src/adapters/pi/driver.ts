@@ -203,6 +203,7 @@ export function piDriver(options: PiDriverOptions): RunDriver {
     let promptSettled = false;
     let failure: unknown;
     const scratch = createNormalizationScratch();
+    scratch.model = ctx.model;
 
     /**
      * Stop the run when a budget is spent.
