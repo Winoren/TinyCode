@@ -18,7 +18,7 @@ import { DEFAULT_BUDGET, type RunBudget, type ToolPort } from "./core/contracts.
 import type { HumanInputChannel, RunDriver } from "./core/loop.ts";
 import { destructiveCommandPolicy, type GatePolicy } from "./core/gate.ts";
 import { createRedactor } from "./core/redact.ts";
-import { resolveModel } from "./model/registry.ts";
+import { credentialEnvNames, resolveModel } from "./model/registry.ts";
 import {
   AgentRuntime,
   createRuntime,
@@ -28,6 +28,7 @@ import {
   type RunLog,
   type SessionStore,
 } from "./runtime/index.ts";
+import { scrubEnvironment } from "./tools/env.ts";
 import { createToolRegistry, selectTools } from "./tools/index.ts";
 import type { AnyToolDefinition } from "./tools/types.ts";
 import { DEFAULT_TOOL_NAMES } from "./cli/args.ts";
@@ -80,7 +81,6 @@ export interface Bootstrapped {
 export async function bootstrap(options: BootstrapOptions): Promise<Bootstrapped> {
   const storeDir = options.storeDir ?? path.join(options.cwd, ".tinycode");
   const tools = selectTools(options.toolNames ?? DEFAULT_TOOL_NAMES);
-  const toolPort = createToolRegistry(tools, { cwd: options.cwd });
   const budget: RunBudget = { ...DEFAULT_BUDGET, ...options.budget };
   const newId = defaultIdGenerator();
 
@@ -125,7 +125,13 @@ export async function bootstrap(options: BootstrapOptions): Promise<Bootstrapped
   }
   const redact = createRedactor(secretCandidates);
 
-  // --- 3. Only now touch the filesystem. ---
+  // --- 3. The tool port, with the agent's own credentials withheld from any command
+  //        the model writes. Redaction protects the trace; only this protects the
+  //        model's context. ---
+  const toolEnv = scrubEnvironment(process.env, credentialEnvNames(envWiredProviders));
+  const toolPort = createToolRegistry(tools, { cwd: options.cwd, env: toolEnv });
+
+  // --- 4. Only now touch the filesystem. ---
   const runLog = options.runLog ?? (await JsonlRunLog.open(storeDir));
   const sessionStore =
     options.sessionStore ?? (await JsonSessionStore.open(storeDir, newId));

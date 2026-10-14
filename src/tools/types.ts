@@ -14,6 +14,13 @@ export interface ToolContext {
   /** Absolute workspace root. Every path a tool touches is resolved against it. */
   cwd: string;
   signal: AbortSignal;
+  /**
+   * Environment for spawned processes. Absent means `process.env`.
+   *
+   * The registry supplies a scrubbed copy so a model-written command cannot read the
+   * agent's own provider credentials. See `tools/env.ts`.
+   */
+  env?: NodeJS.ProcessEnv;
 }
 
 export interface ToolDefinition<Input> {

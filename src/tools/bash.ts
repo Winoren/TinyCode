@@ -46,7 +46,14 @@ export const bashTool: ToolDefinition<BashInput> = {
 
   async execute(input, ctx) {
     const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    const result = await runCommand(input.command, ctx.cwd, timeoutMs, ctx.signal);
+    const result = await runCommand(
+      input.command,
+      ctx.cwd,
+      timeoutMs,
+      ctx.signal,
+      // Never inherit the agent's own credentials into a model-written command.
+      ctx.env ?? process.env,
+    );
 
     const sections: string[] = [];
     if (result.timedOut) {
@@ -106,13 +113,14 @@ async function runCommand(
   cwd: string,
   timeoutMs: number,
   signal: AbortSignal,
+  env: NodeJS.ProcessEnv,
 ): Promise<CommandResult> {
   // A signal that already fired must not spawn a process at all.
   signal.throwIfAborted();
 
   return new Promise<CommandResult>((resolve, reject) => {
     const startedAt = Date.now();
-    const child = spawn(command, { shell: true, cwd, env: process.env });
+    const child = spawn(command, { shell: true, cwd, env });
     const budget = createCaptureBudget(MAX_CAPTURE_CHARS);
 
     let stdout = "";

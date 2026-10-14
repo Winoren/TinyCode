@@ -14,7 +14,7 @@
  *    a confusing failure, so an unknown id lists what is actually available.
  */
 
-import { getEnvApiKey, type Model } from "@earendil-works/pi-ai/compat";
+import { findEnvKeys, getEnvApiKey, type Model } from "@earendil-works/pi-ai/compat";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import { AgentError } from "../core/contracts.ts";
@@ -158,4 +158,23 @@ async function wireEnvironmentKeys(
   }
 
   return wired;
+}
+
+/**
+ * The environment variable names that hold credentials for these providers **and are
+ * actually present in this process**.
+ *
+ * Presence-filtered on purpose: an absent variable needs no scrubbing, and using the
+ * provider's own detection means we withhold exactly the credentials this process
+ * holds rather than a speculative list.
+ *
+ * Names, not values: the tool layer only deletes them from a child process's
+ * environment and never handles the secret itself.
+ */
+export function credentialEnvNames(providerIds: readonly string[]): string[] {
+  const names = new Set<string>();
+  for (const providerId of providerIds) {
+    for (const name of findEnvKeys(providerId) ?? []) names.add(name);
+  }
+  return [...names];
 }

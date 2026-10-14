@@ -109,6 +109,7 @@ source, so regenerating an unchanged build produces no diff.
 | A tool failure is visible and does not corrupt other state | `core loop — refusal and isolation` |
 | Cancellation stops work, is never retried, and is persisted as `cancelled` | `runtime — termination is never fabricated` |
 | Credentials never reach an event or the durable log, even when a provider error echoes them | `credentials never reach the durable trace` |
+| A model-written command cannot read the agent's own credentials | `tool-env.test.ts`, with a control proving the leak exists without scrubbing |
 | Retry is bounded, visible, and skipped for non-retryable and cancelled runs | `runtime — bounded, visible retry` |
 | Waiting for a human is a durable `awaiting_human` state that resumes explicitly | `runtime — waiting for a human is a durable state` |
 | A restart recovers state, and replay rebuilds it exactly | `runtime — persistence`, `core loop — replay equivalence` |
@@ -139,6 +140,10 @@ Closed unless proven otherwise:
   bypass the boundary entirely;
 - tool output is truncated before entering the transcript, because tool results are
   untrusted input;
+- **credentials are withheld from the commands the model writes.** `bash` does not
+  inherit the agent's environment: the credential variables of the providers in use are
+  deleted before spawning. Redaction protects the trace; only this protects the model's
+  context, where a tool result arrives as clear text before it is ever recorded;
 - **credentials are redacted from every event** before it is handed to a consumer or
   written to disk — exact-value matching of the keys this process actually holds, not
   pattern matching, so a tool result quoting a key from your own file is not mangled;

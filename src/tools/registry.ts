@@ -16,6 +16,11 @@ import type { AnyToolDefinition } from "./types.ts";
 export interface ToolRegistryOptions {
   /** Absolute workspace root every tool is confined to. */
   cwd: string;
+  /**
+   * Environment handed to spawned processes. Supply a scrubbed copy: a command the
+   * model wrote must not be able to read the agent's own provider credentials.
+   */
+  env?: NodeJS.ProcessEnv;
 }
 
 export function createToolRegistry(
@@ -52,7 +57,11 @@ export function createToolRegistry(
         );
       }
 
-      return tool.execute(parsed.data, { cwd: options.cwd, signal });
+      return tool.execute(parsed.data, {
+        cwd: options.cwd,
+        signal,
+        ...(options.env === undefined ? {} : { env: options.env }),
+      });
     },
   };
 }
