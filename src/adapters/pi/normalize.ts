@@ -184,9 +184,12 @@ export function normalizeSessionEvent(
         .find((message) => message.role === "assistant");
       scratch.stopReason = lastAssistant?.stopReason ?? scratch.stopReason;
       scratch.errorMessage = lastAssistant?.errorMessage ?? scratch.errorMessage;
-      // The deepseek path is known to omit `usage` here; leave it undefined rather
-      // than reporting fabricated zeros.
-      scratch.usage = lastAssistant?.usage ?? scratch.usage;
+      // Sum usage across **every** assistant message, not just the last. Taking only the
+      // last was found by a real deepseek run: a five-request run reported 153 input
+      // tokens — the trace answered "what did the last turn cost", not "what did the run
+      // cost". When no assistant message reports usage, leave it undefined rather than
+      // reporting fabricated zeros.
+      scratch.usage = sumAssistantUsage(messages) ?? scratch.usage;
       return [];
     }
 
@@ -273,6 +276,38 @@ function errorTextOf(result: unknown): string {
   }
 
   return JSON.stringify(result ?? "tool failed");
+}
+
+/**
+ * Total usage of a run: the sum over every assistant message, since each one carries
+ * the usage of its own model request. `cost` is included only when at least one
+ * message actually reported it, so the shape never claims a measured zero.
+ */
+function sumAssistantUsage(
+  messages: readonly { role?: string; usage?: SdkUsage }[],
+): SdkUsage | undefined {
+  let sawUsage = false;
+  let sawCost = false;
+  let input = 0;
+  let output = 0;
+  let total = 0;
+
+  for (const message of messages) {
+    if (message.role !== "assistant" || message.usage === undefined) continue;
+    sawUsage = true;
+    input += message.usage.input ?? 0;
+    output += message.usage.output ?? 0;
+    const cost = message.usage.cost?.total;
+    if (cost !== undefined) {
+      sawCost = true;
+      total += cost;
+    }
+  }
+
+  if (!sawUsage) return undefined;
+  const usage: SdkUsage = { input, output };
+  if (sawCost) usage.cost = { total };
+  return usage;
 }
 
 export function toUsageReport(

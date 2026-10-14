@@ -270,6 +270,42 @@ describe("agent_end", () => {
     expect(report.inputTokens).toBeUndefined();
     expect(report.outputTokens).toBeUndefined();
   });
+
+  it("sums usage across every assistant turn, not just the last", () => {
+    // Found by a real deepseek run: a five-request run reported 153 input tokens,
+    // which was the last turn's count alone — the trace answered "what did the last
+    // turn cost", not "what did the run cost".
+    const harness = makeHarness();
+    feed(harness, {
+      type: "agent_end",
+      willRetry: false,
+      messages: [
+        { role: "user" },
+        { role: "assistant", stopReason: "toolUse", usage: { input: 100, output: 20, cost: { total: 0.001 } } },
+        { role: "tool" },
+        { role: "assistant", stopReason: "toolUse", usage: { input: 40, output: 10, cost: { total: 0.002 } } },
+        { role: "tool" },
+        { role: "assistant", stopReason: "stop", usage: { input: 13, output: 114, cost: { total: 0.003 } } },
+      ],
+    });
+
+    expect(harness.scratch.usage).toEqual({ input: 153, output: 144, cost: { total: 0.006 } });
+  });
+
+  it("omits the cost when no assistant message reported one", () => {
+    const harness = makeHarness();
+    feed(harness, {
+      type: "agent_end",
+      willRetry: false,
+      messages: [
+        { role: "assistant", stopReason: "toolUse", usage: { input: 10, output: 5 } },
+        { role: "assistant", stopReason: "stop", usage: { input: 10, output: 5 } },
+      ],
+    });
+
+    expect(harness.scratch.usage).toEqual({ input: 20, output: 10 });
+    expect(harness.scratch.usage?.cost).toBeUndefined();
+  });
 });
 
 describe("classifying a turn that ended in error", () => {

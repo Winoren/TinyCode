@@ -200,19 +200,25 @@ Closed unless proven otherwise:
 
 Honest gaps, not a backlog:
 
-1. **No run against a real model provider has completed successfully.** The environment
-   has no credentials (`~/.pi/agent/auth.json` is `{}`; no `*_API_KEY` set).
+1. **Only deepseek has been exercised with a live key.** On 2026-10-14 the real
+   end-to-end release check ran against `deepseek/deepseek-v4-flash`: the agent
+   diagnosed and fixed a seeded bug in a scratch workspace, re-ran the verification
+   itself, and ended `complete` — twice (5 and 6 model requests, 7 tool calls each).
+   The failure side is verified too: an invalid key produces `run_failed` with code
+   `auth`, exit 1, and the provider's own 401 message in the trace. Other providers
+   and models remain unexercised live.
 
-   This is narrower than it sounds. The real SDK path *is* exercised end to end by
+   The real SDK path is also exercised end to end by
    [`tests/pi-live.test.ts`](tests/pi-live.test.ts): a real `ModelRuntime` provider points
    at a local HTTP server speaking the OpenAI-compatible protocol, so a real session
    runs a real prompt, a real tool-call loop through `defineTool` into our `ToolPort`,
    real streaming, real normalization, and a real HTTP round trip — only the model's
-   output is scripted. Against a live provider the CLI also reaches the provider and
-   fails at authentication, correctly classified as `auth`.
+   output is scripted.
 
-   What is unverified is the one thing a stub cannot supply: a real model's judgement
-   over a real repository, and whatever that surfaces.
+   The first live run also caught a real defect the stub never could: `usage_reported`
+   carried only the **last** turn's tokens (153 input for a five-request run), because
+   each assistant message reports its own request. Usage is now summed across all
+   assistant messages — see [`docs/adapter-mapping.md`](docs/adapter-mapping.md) §2.4.
 2. **Token usage is unknown when the provider omits it**, and a second source is needed
    to price such a run. Note what the SDK actually does here, which the Skill's
    `pi-agent-sdk-usage.md` §6 describes differently: it does not leave `usage` absent, it
@@ -230,12 +236,13 @@ Honest gaps, not a backlog:
    matter in practice live.
 6. **No compaction, sub-agents, MCP or permissions UI.** Each was postponed until a
    real task demonstrates the need.
-7. **The Pi path's enforcement has never met a real model's behaviour.** Its tool and
-   iteration budgets, cancellation, timeout, retry, tool-error classification and usage
-   extraction are all exercised on the real SDK path by
-   [`tests/pi-live.test.ts`](tests/pi-live.test.ts). What a stub cannot supply is a real
-   model doing something unexpected: a malformed tool call, a refusal, a long reasoning
-   turn.
+7. **The Pi path's enforcement has met a real model only on well-behaved runs.** Its
+   tool and iteration budgets, cancellation, timeout, retry, tool-error classification
+   and usage extraction are exercised on the real SDK path by
+   [`tests/pi-live.test.ts`](tests/pi-live.test.ts), and the two live deepseek runs
+   (limitation 1) behaved: clean tool calls, no refusals, bounded reasoning. What no
+   run has yet surfaced is a real model doing something unexpected: a malformed tool
+   call, a refusal, a very long reasoning turn.
 8. **A Runtime-level retry restarts the SDK conversation.** Retry is proven on both the
    deterministic path and the real SDK path (a stub returning 503 twice, then
    succeeding), and the SDK's own request-level retry is configured from the same

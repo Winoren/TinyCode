@@ -141,6 +141,14 @@ the Skill's names would silently produce `undefined` for every cost figure.
 We therefore map from the real `Usage`: `input → inputTokens`, `output → outputTokens`,
 `cost.total → costUSD`. `durationMs` is measured by the Runtime, not read from `Usage`.
 
+**Usage is summed across every assistant message in `agent_end.messages`, not taken
+from the last one.** Verified against a real deepseek run (2026-10-14): a five-request
+run reported 153 input / 144 output tokens — the last turn alone — because each
+assistant message carries only its own request's usage. Summing gives the run's real
+cost (a comparable six-request run: 2,918 input / 972 output). Note `input` already
+excludes cache hits (SDK: `prompt_tokens − cached_tokens`), so deepseek prompt caching
+makes later turns look cheap; the sum is still the truthful total.
+
 The Skill's §6 observation 2 still holds and is reproduced here as a known gap: on the
 deepseek path `agent_end`'s assistant message may carry no `usage`, so these fields can
 legitimately be `undefined`. The trace must say "unknown", never "zero".
@@ -213,7 +221,7 @@ definition is live" a question worth re-asking on every SDK upgrade.
 | `run_cancelled` | `AgentSession.abort()`; fired `AbortSignal` | cancellation is a lifecycle state, never an error |
 | `RunErrorCode.provider_unavailable` | `402`, 5xx, transport failures | see `errors.ts`; verified against the 402 case |
 | `RunErrorCode.invalid_tool` | `prepareArguments` conversion failure | adapter must not crash the runtime |
-| `usage_reported` | `Usage` on the `agent_end` assistant message | field-name mapping corrected in §2.4 |
+| `usage_reported` | `Usage` summed over every `agent_end` assistant message | field-name mapping corrected in §2.4 |
 
 ## 4. The one place the architecture does not line up
 
