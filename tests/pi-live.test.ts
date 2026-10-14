@@ -395,6 +395,41 @@ describe("live: budgets, cancellation and failure on the real path", () => {
     expect(terminals(events)[0]).toMatchObject({ type: "run_completed", status: "complete" });
   }, 30_000);
 
+  it("reports tokens when the endpoint reports them", async () => {
+    const cwd = await tempDir();
+    const stub = await startStubProvider([
+      { text: "Counted.", usage: { prompt_tokens: 1_234, completion_tokens: 56 } },
+    ]);
+    providers.push(stub);
+
+    const { runtime } = await liveRuntime({ cwd, stub, toolNames: ["ls"] });
+
+    const events = await collect(runtime.run({ id: "usage", input: "hello", cwd }));
+    const reported = events.find((event) => event.type === "usage_reported");
+
+    // The exit criterion is that usage answers the cost question; this is the first test
+    // to check it against a provider that actually reports usage.
+    expect(reported).toMatchObject({
+      type: "usage_reported",
+      usage: { inputTokens: 1_234, outputTokens: 56 },
+    });
+  }, 30_000);
+
+  it("reports unknown rather than zero when the endpoint reports nothing", async () => {
+    const cwd = await tempDir();
+    const stub = await startStubProvider([{ text: "Uncounted." }]);
+    providers.push(stub);
+
+    const { runtime } = await liveRuntime({ cwd, stub, toolNames: ["ls"] });
+
+    const events = await collect(runtime.run({ id: "usage-none", input: "hello", cwd }));
+    const reported = events.find((event) => event.type === "usage_reported");
+
+    const usage = (reported as { usage?: { inputTokens?: number; outputTokens?: number } }).usage;
+    expect(usage?.inputTokens).toBeUndefined();
+    expect(usage?.outputTokens).toBeUndefined();
+  }, 30_000);
+
   it("retries a retryable provider failure and then succeeds", async () => {
     const cwd = await tempDir();
     const stub = await startStubProvider([

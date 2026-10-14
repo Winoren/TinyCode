@@ -143,7 +143,7 @@ source, so regenerating an unchanged build produces no diff.
 | The whole product runs end to end against a self-hosted endpoint, and reports it | `cli-live.test.ts` — real CLI, real session, real tool call |
 | A file can be located by name even with write and shell tools withheld | `find` — bare patterns match the name anywhere, slash patterns match the path |
 | `run_completed` distinguishes `complete` from `partial` | `cli — end-to-end vertical slice` |
-| Usage is reported, or explicitly unknown — never a fabricated zero | `event rendering` |
+| Usage is reported when the endpoint reports it, and unknown when it does not — never a fabricated zero | `live — reports tokens when the endpoint reports them` / `reports unknown rather than zero` |
 | Tools cannot escape the workspace, including via symlinks | `workspace boundary` |
 | A gated action cannot run unapproved, and a refusal is visible, not silent | `gate.test.ts` — policy boundaries and `core loop — the gate decides` |
 | A non-zero exit code is information, not a tool failure | `bash` |
@@ -208,9 +208,12 @@ Honest gaps, not a backlog:
 
    What is unverified is the one thing a stub cannot supply: a real model's judgement
    over a real repository, and whatever that surfaces.
-2. **Token usage may be unknown.** On the deepseek path `agent_end` carries no `usage`
-   field, so `usage_reported` reports `tokens unknown` instead of a number. Cost
-   tracking needs a second source.
+2. **Token usage is unknown when the provider omits it**, and a second source is needed
+   to price such a run. Note what the SDK actually does here, which the Skill's
+   `pi-agent-sdk-usage.md` §6 describes differently: it does not leave `usage` absent, it
+   fills it with **zeros**. Verified by probe. Passing those through made the trace claim
+   a real model call consumed no tokens, so a zero input count is now read as "not
+   reported" and the fields are omitted.
 3. **`ModelPort` is exercised only by the deterministic path.** The SDK owns the real
    loop, so `piDriver` does not call `ModelPort`. The golden-transcript comparison is
    therefore the load-bearing equivalence check, not a port conformance suite.

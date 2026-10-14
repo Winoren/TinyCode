@@ -286,9 +286,19 @@ export function toUsageReport(
   // agent-runner's normalized shape. See docs/adapter-mapping.md §2.4.
   const report: UsageReport = { toolCalls, durationMs };
   if (model !== undefined) report.model = model;
-  if (usage?.input !== undefined) report.inputTokens = usage.input;
-  if (usage?.output !== undefined) report.outputTokens = usage.output;
-  if (usage?.cost?.total !== undefined) report.costUSD = usage.cost.total;
+
+  // The SDK fills `usage` with **zeros** when the provider does not report it — verified
+  // by probe, not assumed. Passing those through made the trace claim a real model call
+  // consumed no tokens, which is impossible for any actual request. A zero input count is
+  // the signal for "not reported", so the fields are omitted and the runtime reports the
+  // cost as unknown rather than inventing a number.
+  const tokensReported = usage !== undefined && ((usage.input ?? 0) > 0 || (usage.output ?? 0) > 0);
+  if (tokensReported) {
+    if (usage.input !== undefined) report.inputTokens = usage.input;
+    if (usage.output !== undefined) report.outputTokens = usage.output;
+    if (usage.cost?.total !== undefined) report.costUSD = usage.cost.total;
+  }
+
   return report;
 }
 

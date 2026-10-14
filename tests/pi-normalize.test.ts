@@ -332,6 +332,25 @@ describe("payload extraction", () => {
     expect(describeToolError(undefined).message.length).toBeGreaterThan(0);
   });
 
+  it("reports unknown rather than the SDK's placeholder zeros", () => {
+    // Verified by probe: when a provider does not report usage, the SDK still fills
+    // `usage` — with zeros. Passing those through claimed a real model call consumed no
+    // tokens, which no actual request does.
+    const absent = toUsageReport(
+      { input: 0, output: 0, cost: { total: 0 } },
+      2,
+      30,
+      "stub/model",
+    );
+
+    expect(absent.inputTokens).toBeUndefined();
+    expect(absent.outputTokens).toBeUndefined();
+    expect(absent.costUSD).toBeUndefined();
+    // The things we do know are still reported.
+    expect(absent.toolCalls).toBe(2);
+    expect(absent.durationMs).toBe(30);
+  });
+
   it("reads the SDK's error envelope, which has no message field", () => {
     // Verified against pi-agent-core's own `createErrorToolResult`: a thrown tool error
     // is wrapped in the *same* envelope as a success. A `message` lookup found nothing
