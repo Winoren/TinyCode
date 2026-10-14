@@ -1,0 +1,21 @@
+{
+  "scenario": "04-unknown-tool-partial",
+  "terminalType": "run_completed",
+  "terminalStatus": "partial",
+  "missingMaterial": [
+    "deploy"
+  ],
+  "eventCount": 8,
+  "observationCount": 1,
+  "transcriptLength": 4,
+  "toolCalls": 0,
+  "iteration": 1,
+  "eventTypes": [
+    "decision_made",
+    "model_requested",
+    "observation_added",
+    "run_completed",
+    "run_started",
+    "usage_reported"
+  ]
+}

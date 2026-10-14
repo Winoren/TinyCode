@@ -1,0 +1,18 @@
+{"type":"run_started","runId":"id-1","sequence":0,"timestamp":1700000000003}
+{"type":"model_requested","model":"fake-model","runId":"id-1","sequence":1,"timestamp":1700000000006}
+{"type":"decision_made","decision":{"kind":"call_tool","intent":{"name":"read","arguments":{"path":"a.ts"}}},"runId":"id-1","sequence":2,"timestamp":1700000000007}
+{"type":"tool_started","toolCallId":"id-2","toolName":"read","args":{"path":"a.ts"},"runId":"id-1","sequence":3,"timestamp":1700000000009}
+{"type":"tool_completed","toolCallId":"id-2","toolName":"read","status":"success","result":"same","durationMs":2,"runId":"id-1","sequence":4,"timestamp":1700000000011}
+{"type":"observation_added","name":"read","observation":{"name":"read","ok":true,"result":"same","durationMs":2,"observedAt":1700000000012},"runId":"id-1","sequence":5,"timestamp":1700000000013}
+{"type":"model_requested","model":"fake-model","runId":"id-1","sequence":6,"timestamp":1700000000015}
+{"type":"decision_made","decision":{"kind":"call_tool","intent":{"name":"read","arguments":{"path":"a.ts"}}},"runId":"id-1","sequence":7,"timestamp":1700000000016}
+{"type":"tool_started","toolCallId":"id-3","toolName":"read","args":{"path":"a.ts"},"runId":"id-1","sequence":8,"timestamp":1700000000018}
+{"type":"tool_completed","toolCallId":"id-3","toolName":"read","status":"success","result":"same","durationMs":2,"runId":"id-1","sequence":9,"timestamp":1700000000020}
+{"type":"observation_added","name":"read","observation":{"name":"read","ok":true,"result":"same","durationMs":2,"observedAt":1700000000021},"runId":"id-1","sequence":10,"timestamp":1700000000022}
+{"type":"model_requested","model":"fake-model","runId":"id-1","sequence":11,"timestamp":1700000000024}
+{"type":"decision_made","decision":{"kind":"call_tool","intent":{"name":"read","arguments":{"path":"a.ts"}}},"runId":"id-1","sequence":12,"timestamp":1700000000025}
+{"type":"tool_started","toolCallId":"id-4","toolName":"read","args":{"path":"a.ts"},"runId":"id-1","sequence":13,"timestamp":1700000000027}
+{"type":"tool_completed","toolCallId":"id-4","toolName":"read","status":"success","result":"same","durationMs":2,"runId":"id-1","sequence":14,"timestamp":1700000000029}
+{"type":"observation_added","name":"read","observation":{"name":"read","ok":true,"result":"same","durationMs":2,"observedAt":1700000000030},"runId":"id-1","sequence":15,"timestamp":1700000000031}
+{"type":"usage_reported","usage":{"toolCalls":3,"durationMs":32,"model":"fake-model"},"runId":"id-1","sequence":16,"timestamp":1700000000034}
+{"type":"run_failed","error":{"code":"budget_iterations","message":"iteration budget exhausted (3 model turns)"},"runId":"id-1","sequence":17,"timestamp":1700000000035}

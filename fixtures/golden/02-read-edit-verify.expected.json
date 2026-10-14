@@ -1,0 +1,21 @@
+{
+  "scenario": "02-read-edit-verify",
+  "terminalType": "run_completed",
+  "terminalStatus": "complete",
+  "missingMaterial": [],
+  "eventCount": 20,
+  "observationCount": 3,
+  "transcriptLength": 8,
+  "toolCalls": 3,
+  "iteration": 3,
+  "eventTypes": [
+    "decision_made",
+    "model_requested",
+    "observation_added",
+    "run_completed",
+    "run_started",
+    "tool_completed",
+    "tool_started",
+    "usage_reported"
+  ]
+}

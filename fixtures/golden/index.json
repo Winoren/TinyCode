@@ -1,0 +1,29 @@
+{
+  "generatedBy": "scripts/generate-golden.ts",
+  "fixtures": [
+    {
+      "name": "01-respond-only",
+      "description": "run_completed / 5 events"
+    },
+    {
+      "name": "02-read-edit-verify",
+      "description": "run_completed / 20 events"
+    },
+    {
+      "name": "03-tool-failure-isolated",
+      "description": "run_completed / 15 events"
+    },
+    {
+      "name": "04-unknown-tool-partial",
+      "description": "run_completed / 8 events"
+    },
+    {
+      "name": "05-human-confirmation",
+      "description": "run_completed / 9 events"
+    },
+    {
+      "name": "06-budget-exhausted",
+      "description": "run_failed / 18 events"
+    }
+  ]
+}

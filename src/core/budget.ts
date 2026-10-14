@@ -8,7 +8,14 @@
 import { BudgetExceededError, type RunBudget } from "./contracts.ts";
 
 export interface BudgetCounters {
-  iterations: number;
+  /**
+   * Model turns taken so far. Deliberately *not* `AgentState.iteration`, which counts
+   * productive steps (observations and human round trips) and is what replay
+   * reconstructs. Conflating the two made the final answering turn run out of budget:
+   * a run with N tool calls had `iteration === N`, so it needed N+1 turns but was
+   * stopped at N.
+   */
+  turns: number;
   toolCalls: number;
   startedAt: number;
 }
@@ -19,10 +26,10 @@ export function assertWithinBudget(
   counters: BudgetCounters,
   now: number,
 ): void {
-  if (counters.iterations >= budget.maxIterations) {
+  if (counters.turns >= budget.maxIterations) {
     throw new BudgetExceededError(
       "budget_iterations",
-      `iteration budget exhausted (${budget.maxIterations})`,
+      `iteration budget exhausted (${budget.maxIterations} model turns)`,
     );
   }
   if (counters.toolCalls > budget.maxToolCalls) {

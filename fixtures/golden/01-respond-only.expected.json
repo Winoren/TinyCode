@@ -1,0 +1,18 @@
+{
+  "scenario": "01-respond-only",
+  "terminalType": "run_completed",
+  "terminalStatus": "complete",
+  "missingMaterial": [],
+  "eventCount": 5,
+  "observationCount": 0,
+  "transcriptLength": 2,
+  "toolCalls": 0,
+  "iteration": 0,
+  "eventTypes": [
+    "decision_made",
+    "model_requested",
+    "run_completed",
+    "run_started",
+    "usage_reported"
+  ]
+}

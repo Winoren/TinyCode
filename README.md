@@ -76,7 +76,19 @@ deepseek/deepseek-v4-flash`, `--json`, `--max-iterations`, `--timeout`, `--store
 npm run typecheck   # tsc --noEmit, strict + exactOptionalPropertyTypes
 npm test            # vitest
 npm run build       # emits loadable ESM
+npm run golden      # regenerate the golden transcript corpus (deliberate, not CI)
 ```
+
+### Golden transcripts
+
+[`fixtures/golden/`](fixtures/golden) holds six complete event logs from real runs,
+each paired with a summary of the state it replays to. They exist so that a change in
+the event vocabulary, in replay semantics, or in the SDK adapter cannot land silently:
+if semantics move, [`tests/golden.test.ts`](tests/golden.test.ts) stops matching and the
+corpus must be regenerated on purpose.
+
+Determinism is injected, not hoped for — the generator supplies a fixed clock and id
+source, so regenerating an unchanged build produces no diff.
 
 ## Invariants, and the test that holds each one
 

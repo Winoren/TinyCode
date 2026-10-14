@@ -1,0 +1,8 @@
+{"type":"run_started","runId":"id-1","sequence":0,"timestamp":1700000000003}
+{"type":"model_requested","model":"fake-model","runId":"id-1","sequence":1,"timestamp":1700000000006}
+{"type":"decision_made","decision":{"kind":"call_tool","intent":{"name":"deploy","arguments":{}}},"runId":"id-1","sequence":2,"timestamp":1700000000007}
+{"type":"observation_added","name":"deploy","observation":{"name":"deploy","ok":false,"error":{"code":"invalid_tool","message":"tool not in allowlist: deploy"},"durationMs":0,"observedAt":1700000000008},"runId":"id-1","sequence":3,"timestamp":1700000000009}
+{"type":"model_requested","model":"fake-model","runId":"id-1","sequence":4,"timestamp":1700000000011}
+{"type":"decision_made","decision":{"kind":"respond","content":"I cannot deploy: no such tool."},"runId":"id-1","sequence":5,"timestamp":1700000000012}
+{"type":"usage_reported","usage":{"toolCalls":0,"durationMs":9,"model":"fake-model"},"runId":"id-1","sequence":6,"timestamp":1700000000014}
+{"type":"run_completed","status":"partial","result":"I cannot deploy: no such tool.","missingMaterial":["deploy"],"runId":"id-1","sequence":7,"timestamp":1700000000015}

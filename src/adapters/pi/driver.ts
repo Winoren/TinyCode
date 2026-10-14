@@ -30,6 +30,7 @@ import {
 
 import {
   AgentError,
+  BudgetExceededError,
   toolOutput,
   type EventDraft,
   type Observation,
@@ -154,12 +155,49 @@ export function piDriver(options: PiDriverOptions): RunDriver {
     let sdkUsage: SdkUsage | undefined;
     let fullText = "";
     let lastSegmentText = "";
+    /** SDK-level model turns; this is what `maxIterations` bounds. */
+    let turns = 0;
     const missing = new Set<string>();
     const startedTools = new Map<string, { readonly startedAt: number }>();
 
     const enqueue = (draft: EventDraft): void => {
       queue.push(draft);
       signalWork();
+    };
+
+    /**
+     * Stop the run when a budget is spent.
+     *
+     * The Runtime enforces the time budget, but iteration and tool budgets are the
+     * driver's to enforce because only the driver sees the SDK's internal turns. Without
+     * this, `--max-iterations` and `--max-tool-calls` were silently inert on the real
+     * path while working on the deterministic one.
+     */
+    const fail = (error: unknown): void => {
+      failure ??= error;
+      promptSettled = true;
+      void session.abort();
+      signalWork();
+    };
+
+    const enforceBudgets = (): void => {
+      if (state.toolCalls > ctx.budget.maxToolCalls) {
+        fail(
+          new BudgetExceededError(
+            "budget_tools",
+            `tool budget exhausted (${ctx.budget.maxToolCalls})`,
+          ),
+        );
+        return;
+      }
+      if (turns > ctx.budget.maxIterations) {
+        fail(
+          new BudgetExceededError(
+            "budget_iterations",
+            `iteration budget exhausted (${ctx.budget.maxIterations} model turns)`,
+          ),
+        );
+      }
     };
 
     function handle(event: SessionEvent): void {
@@ -191,6 +229,7 @@ export function piDriver(options: PiDriverOptions): RunDriver {
             toolName: event.toolName,
             args,
           });
+          enforceBudgets();
           return;
         }
 
@@ -248,6 +287,8 @@ export function piDriver(options: PiDriverOptions): RunDriver {
           // The deepseek path is known to omit `usage` here; leave it undefined
           // rather than reporting fabricated zeros.
           sdkUsage = lastAssistant?.usage ?? sdkUsage;
+          turns += 1;
+          enforceBudgets();
           return;
         }
 
@@ -285,7 +326,10 @@ export function piDriver(options: PiDriverOptions): RunDriver {
           signalWork();
         },
         (error: unknown) => {
-          failure = error;
+          // Never overwrite a budget failure: aborting the session to enforce a
+          // budget makes the prompt reject with AbortError, which would otherwise
+          // reclassify a deliberate stop as a user cancellation.
+          failure ??= error;
           promptSettled = true;
           signalWork();
         },

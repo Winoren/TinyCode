@@ -208,6 +208,36 @@ describe("core loop — budgets and termination", () => {
     ).rejects.toMatchObject({ code: "budget_iterations" });
   });
 
+  it("bounds model turns: N tool calls plus the answering turn need maxIterations >= N+1", async () => {
+    const script = (): Decision[] => [
+      { kind: "call_tool", intent: { name: "read", arguments: { path: "a.ts" } } },
+      { kind: "call_tool", intent: { name: "read", arguments: { path: "b.ts" } } },
+      { kind: "call_tool", intent: { name: "read", arguments: { path: "c.ts" } } },
+      { kind: "respond", content: "done" },
+    ];
+    const tools = fakeTools({ read: () => "body" });
+
+    // Four turns fit exactly — including the turn that answers.
+    const withinBudget = await drive(
+      coreLoopDriver({ model: scriptedModel(script()), tools }),
+      initialState(TASK),
+      makeContext({ budget: { ...DEFAULT_BUDGET, maxIterations: 4 } }),
+    );
+    expect(terminalEvents(withinBudget)[0]).toMatchObject({
+      type: "run_completed",
+      status: "complete",
+    });
+
+    // One turn short: the answering turn is refused rather than allowed through.
+    await expect(
+      drive(
+        coreLoopDriver({ model: scriptedModel(script()), tools }),
+        initialState(TASK),
+        makeContext({ budget: { ...DEFAULT_BUDGET, maxIterations: 3 } }),
+      ),
+    ).rejects.toMatchObject({ code: "budget_iterations" });
+  });
+
   it("fails with budget_tools when the tool budget is exceeded", async () => {
     const tools = fakeTools({ read: () => "same" });
     const model = functionalModel(() => ({

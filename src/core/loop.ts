@@ -70,14 +70,17 @@ export function coreLoopDriver(deps: CoreLoopDeps): RunDriver {
     const startedAt = ctx.now();
     /** Tool names the run could not use. Drives complete-vs-partial at the end. */
     const missing = new Set<string>();
+    /** Model turns, which is what `maxIterations` bounds. */
+    let turns = 0;
 
     for (;;) {
       ctx.signal.throwIfAborted();
       assertWithinBudget(
         ctx.budget,
-        { iterations: state.iteration, toolCalls: state.toolCalls, startedAt },
+        { turns, toolCalls: state.toolCalls, startedAt },
         ctx.now(),
       );
+      turns += 1;
 
       yield { type: "model_requested", ...(ctx.model === undefined ? {} : { model: ctx.model }) };
       const decision = await deps.model.decide(state, ctx.signal);

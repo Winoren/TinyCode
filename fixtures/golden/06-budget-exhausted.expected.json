@@ -1,0 +1,21 @@
+{
+  "scenario": "06-budget-exhausted",
+  "terminalType": "run_failed",
+  "terminalStatus": "budget_iterations",
+  "missingMaterial": [],
+  "eventCount": 18,
+  "observationCount": 3,
+  "transcriptLength": 7,
+  "toolCalls": 3,
+  "iteration": 3,
+  "eventTypes": [
+    "decision_made",
+    "model_requested",
+    "observation_added",
+    "run_failed",
+    "run_started",
+    "tool_completed",
+    "tool_started",
+    "usage_reported"
+  ]
+}

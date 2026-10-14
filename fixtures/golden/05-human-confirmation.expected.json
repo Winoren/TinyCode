@@ -1,0 +1,20 @@
+{
+  "scenario": "05-human-confirmation",
+  "terminalType": "run_completed",
+  "terminalStatus": "complete",
+  "missingMaterial": [],
+  "eventCount": 9,
+  "observationCount": 0,
+  "transcriptLength": 3,
+  "toolCalls": 0,
+  "iteration": 1,
+  "eventTypes": [
+    "decision_made",
+    "human_input_received",
+    "human_input_requested",
+    "model_requested",
+    "run_completed",
+    "run_started",
+    "usage_reported"
+  ]
+}

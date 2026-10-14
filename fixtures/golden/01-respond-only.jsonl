@@ -1,0 +1,5 @@
+{"type":"run_started","runId":"id-1","sequence":0,"timestamp":1700000000003}
+{"type":"model_requested","model":"fake-model","runId":"id-1","sequence":1,"timestamp":1700000000006}
+{"type":"decision_made","decision":{"kind":"respond","content":"Nothing to change."},"runId":"id-1","sequence":2,"timestamp":1700000000007}
+{"type":"usage_reported","usage":{"toolCalls":0,"durationMs":4,"model":"fake-model"},"runId":"id-1","sequence":3,"timestamp":1700000000009}
+{"type":"run_completed","status":"complete","result":"Nothing to change.","runId":"id-1","sequence":4,"timestamp":1700000000010}

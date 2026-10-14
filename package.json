@@ -17,7 +17,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "demo": "tsx scripts/demo.ts"
+    "golden": "tsx scripts/generate-golden.ts"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "0.84.2",
