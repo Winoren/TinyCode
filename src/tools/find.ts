@@ -27,7 +27,7 @@ import { z } from "zod";
 
 import { AgentError, toolOutput } from "../core/contracts.ts";
 import type { ToolDefinition } from "./types.ts";
-import { resolveSearchTarget, walkFiles, type WalkStats } from "./walk.ts";
+import { loadGitignore, resolveSearchTarget, walkFiles, type WalkStats } from "./walk.ts";
 
 const FindInput = z.object({
   pattern: z
@@ -48,9 +48,10 @@ const DEFAULT_MAX_RESULTS = 200;
 export const findTool: ToolDefinition<FindInput> = {
   name: "find",
   description:
-    "Find files by name or path pattern. Returns workspace-relative paths. " +
-    "A pattern without '/' matches the file name anywhere in the tree; one with '/' " +
-    "matches the whole relative path. Skips dependency and build directories.",
+    "Find files by name or path pattern. Returns workspace-relative paths, so they can " +
+    "be passed straight to read or edit. A pattern without '/' matches the file name " +
+    "anywhere in the tree; one with '/' matches the whole relative path. Skips " +
+    "dependency and build directories, and anything the project's .gitignore excludes.",
 
   schema: FindInput,
 
@@ -83,16 +84,23 @@ export const findTool: ToolDefinition<FindInput> = {
     }
 
     const root = target.absolute;
+    // Patterns are relative to the workspace, even when the search starts deeper.
+    const gitignore = await loadGitignore(ctx.cwd);
 
     const matches: string[] = [];
     let truncated = false;
     const stats: WalkStats = { filesYielded: 0, stoppedEarly: false };
 
-    for await (const relative of walkFiles({ root, signal: ctx.signal, stats })) {
+    for await (const relative of walkFiles({
+      root,
+      signal: ctx.signal,
+      stats,
+      ...(gitignore === undefined ? {} : { gitignore }),
+    })) {
       const subject = matchWholePath ? relative : path.basename(relative);
       if (!path.matchesGlob(subject, input.pattern)) continue;
 
-      matches.push(relative);
+      matches.push(toWorkspaceRelative(ctx.cwd, root, relative));
       if (matches.length >= limit) {
         truncated = true;
         break;
@@ -134,4 +142,26 @@ export function emptyFindMessage(
     );
   }
   return `${scope}.`;
+}
+
+/**
+ * Rewrite a path produced by a walk into one relative to the workspace root.
+ *
+ * A search may start in a subdirectory, but a path is only useful to the caller if it
+ * can be handed straight back to another tool: reporting `a.ts` for a search inside
+ * `src` means `read a.ts` opens a different file, or none at all. Every tool speaks
+ * workspace-relative paths, so search results must too.
+ */
+function toWorkspaceRelative(
+  workspaceRoot: string,
+  searchRoot: string,
+  relativeToSearchRoot: string,
+): string {
+  const prefix = path
+    .relative(path.resolve(workspaceRoot), path.resolve(searchRoot))
+    .split(path.sep)
+    .filter((segment) => segment !== "")
+    .join("/");
+
+  return prefix === "" ? relativeToSearchRoot : `${prefix}/${relativeToSearchRoot}`;
 }

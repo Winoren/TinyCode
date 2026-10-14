@@ -30,7 +30,7 @@ import { z } from "zod";
 import { AgentError, toolOutput } from "../core/contracts.ts";
 import { looksBinary } from "./binary.ts";
 import type { ToolDefinition } from "./types.ts";
-import { resolveSearchTarget, walkFiles, type WalkStats } from "./walk.ts";
+import { loadGitignore, resolveSearchTarget, walkFiles, type WalkStats } from "./walk.ts";
 
 const GrepInput = z.object({
   pattern: z.string().min(1).describe("JavaScript regular expression to search for"),
@@ -86,8 +86,9 @@ const MATCHER_SOURCE = `(function () {
 export const grepTool: ToolDefinition<GrepInput> = {
   name: "grep",
   description:
-    "Search file contents with a regular expression. Returns 'path:line: text' matches. " +
-    "Skips binaries and dependency directories.",
+    "Search file contents with a regular expression. Returns 'path:line: text' matches, " +
+    "with paths relative to the workspace root. Skips binaries, dependency directories, " +
+    "and anything the project's .gitignore excludes.",
   schema: GrepInput,
 
   async execute(input, ctx) {
@@ -141,6 +142,8 @@ export const grepTool: ToolDefinition<GrepInput> = {
     }
 
     const root = target.absolute;
+    // Patterns are relative to the workspace, even when the search starts deeper.
+    const gitignore = await loadGitignore(ctx.cwd);
 
     const matches: string[] = [];
     let filesScanned = 0;
@@ -169,7 +172,12 @@ export const grepTool: ToolDefinition<GrepInput> = {
 
     const walkStats: WalkStats = { filesYielded: 0, stoppedEarly: false };
 
-    for await (const relative of walkFiles({ root, signal: ctx.signal, stats: walkStats })) {
+    for await (const relative of walkFiles({
+      root,
+      signal: ctx.signal,
+      stats: walkStats,
+      ...(gitignore === undefined ? {} : { gitignore }),
+    })) {
       if (matches.length >= limit) {
         truncated = true;
         break;
@@ -179,7 +187,10 @@ export const grepTool: ToolDefinition<GrepInput> = {
       if (text === undefined) continue;
       filesScanned += 1;
 
-      batch.push({ path: relative, lines: text.split(/\r?\n/) });
+      batch.push({
+        path: toWorkspaceRelative(ctx.cwd, root, relative),
+        lines: text.split(/\r?\n/),
+      });
       batchBytes += text.length;
       if (batchBytes >= REGEX_BATCH_BYTES) flush();
       if (truncated) break;
@@ -316,4 +327,26 @@ export function emptySearchMessage(pattern: string, stats: WalkStats): string {
     );
   }
   return `No matches for /${pattern}/`;
+}
+
+/**
+ * Rewrite a path produced by a walk into one relative to the workspace root.
+ *
+ * A search may start in a subdirectory, but a path is only useful to the caller if it
+ * can be handed straight back to another tool: reporting `a.ts` for a search inside
+ * `src` means `read a.ts` opens a different file, or none at all. Every tool speaks
+ * workspace-relative paths, so search results must too.
+ */
+function toWorkspaceRelative(
+  workspaceRoot: string,
+  searchRoot: string,
+  relativeToSearchRoot: string,
+): string {
+  const prefix = path
+    .relative(path.resolve(workspaceRoot), path.resolve(searchRoot))
+    .split(path.sep)
+    .filter((segment) => segment !== "")
+    .join("/");
+
+  return prefix === "" ? relativeToSearchRoot : `${prefix}/${relativeToSearchRoot}`;
 }

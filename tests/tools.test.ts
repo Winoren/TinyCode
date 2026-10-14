@@ -474,6 +474,78 @@ describe("walk cap", () => {
   });
 });
 
+describe("respecting .gitignore", () => {
+  async function repo(gitignore: string): Promise<string> {
+    const cwd = await makeWorkspace();
+    await fs.writeFile(path.join(cwd, ".gitignore"), gitignore, "utf8");
+    await fs.mkdir(path.join(cwd, "target", "debug"), { recursive: true });
+    await fs.mkdir(path.join(cwd, "src"), { recursive: true });
+    await fs.writeFile(path.join(cwd, "target", "debug", "gen.ts"), "", "utf8");
+    await fs.writeFile(path.join(cwd, "src", "a.ts"), "", "utf8");
+    await fs.writeFile(path.join(cwd, "app.log"), "", "utf8");
+    await fs.writeFile(path.join(cwd, "keep.log"), "", "utf8");
+    return cwd;
+  }
+
+  it("skips directories the project ignores, which the built-in list cannot know about", async () => {
+    const cwd = await repo("target/\n");
+
+    const result = await run(findTool, { pattern: "*.ts" }, cwd);
+
+    expect(result.content).toContain("src/a.ts");
+    expect(result.content).not.toContain("target/");
+  });
+
+  it("honours a negation", async () => {
+    const cwd = await repo("*.log\n!keep.log\n");
+
+    const result = await run(findTool, { pattern: "*.log" }, cwd);
+
+    expect(result.content).toContain("keep.log");
+    expect(result.content).not.toContain("app.log");
+  });
+
+  it("applies the workspace's patterns even when the search starts deeper", async () => {
+    const cwd = await repo("generated/\n");
+    await fs.mkdir(path.join(cwd, "src", "generated"), { recursive: true });
+    await fs.writeFile(path.join(cwd, "src", "generated", "b.ts"), "", "utf8");
+
+    // Testing `generated/b.ts` against the matcher would miss it; the pattern is
+    // written relative to the workspace root, so the walk must test `src/generated/...`.
+    const result = await run(findTool, { pattern: "*.ts", path: "src" }, cwd);
+
+    // Results stay workspace-relative even though the search started deeper, so they
+    // can be handed straight to another tool.
+    expect(result.content).toContain("src/a.ts");
+    expect(result.content).not.toContain("generated");
+  });
+
+  it("keeps grep consistent with find", async () => {
+    const cwd = await repo("target/\n");
+    await fs.writeFile(path.join(cwd, "target", "debug", "gen.ts"), "needle\n", "utf8");
+    await fs.writeFile(path.join(cwd, "src", "a.ts"), "needle\n", "utf8");
+
+    const result = await run(grepTool, { pattern: "needle" }, cwd);
+
+    expect(result.content).toContain("src/a.ts:1:");
+    expect(result.content).not.toContain("target/");
+  });
+
+  it("still works when there is no .gitignore, and when it is empty", async () => {
+    const cwd = await makeWorkspace();
+    await fs.mkdir(path.join(cwd, "node_modules", "dep"), { recursive: true });
+    await fs.writeFile(path.join(cwd, "node_modules", "dep", "a.ts"), "", "utf8");
+    await fs.writeFile(path.join(cwd, "src.ts"), "", "utf8");
+    await fs.writeFile(path.join(cwd, ".gitignore"), "   \n", "utf8");
+
+    const result = await run(findTool, { pattern: "*.ts" }, cwd);
+
+    // The built-in list is the floor and applies regardless.
+    expect(result.content).toContain("src.ts");
+    expect(result.content).not.toContain("node_modules");
+  });
+});
+
 describe("a search path that is a file, not a directory", () => {
   it("searches the file rather than silently reporting no matches", async () => {
     const cwd = await makeWorkspace();

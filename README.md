@@ -121,6 +121,8 @@ source, so regenerating an unchanged build produces no diff.
 | Budgets terminate a run predictably | `core loop — budgets and termination`, and the Pi driver enforces turns and tool calls itself |
 | A model-supplied regex cannot hang the run past its budget | `grep — interrupts a catastrophically backtracking pattern` |
 | A search path that names a file searches that file, and a missing one is reported as missing | `a search path that is a file, not a directory` |
+| Project-specific ignores are honoured, not just a built-in directory list | `.gitignore` — skips `target/`, honours a negation, applies from a deeper search root |
+| Search results are workspace-relative, so they can be fed to another tool | `.gitignore` — applies the workspace's patterns even when the search starts deeper |
 | A file can be located by name even with write and shell tools withheld | `find` — bare patterns match the name anywhere, slash patterns match the path |
 | `run_completed` distinguishes `complete` from `partial` | `cli — end-to-end vertical slice` |
 | Usage is reported, or explicitly unknown — never a fabricated zero | `event rendering` |
@@ -187,13 +189,17 @@ Honest gaps, not a backlog:
    therefore the load-bearing equivalence check, not a port conformance suite.
 4. **`onUpdate` is ignored.** The SDK streams tool progress; TinyCode does not render
    it, so it does not claim to.
-5. **No compaction, sub-agents, MCP or permissions UI.** Each was postponed until a
+5. **Only the root `.gitignore` is honoured.** Nested `.gitignore` files,
+   `.git/info/exclude`, and cross-file negation precedence are not implemented. Saying
+   so is better than behaving unpredictably; the root file is where the rules that
+   matter in practice live.
+6. **No compaction, sub-agents, MCP or permissions UI.** Each was postponed until a
    real task demonstrates the need.
-6. **The Pi path's budget enforcement is unverified against a live model.** It is
+7. **The Pi path's budget enforcement is unverified against a live model.** It is
    implemented and type-checked, but the code path that trips it only runs during a
    real provider turn, which this environment cannot execute. The deterministic path's
    equivalent is covered by tests.
-7. **A Runtime-level retry restarts the SDK conversation.** Retry is proven on the
+8. **A Runtime-level retry restarts the SDK conversation.** Retry is proven on the
    deterministic path, and the SDK's own request-level retry is configured from the
    same `maxRetries`, but a run-level retry on the Pi path creates a fresh session —
    accumulated observations survive in `AgentState`, the provider's conversation does

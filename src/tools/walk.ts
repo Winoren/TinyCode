@@ -13,6 +13,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import ignore, { type Ignore } from "ignore";
+
 import { throwFsError } from "./fs-errors.ts";
 import { resolveWithinWorkspace } from "./paths.ts";
 
@@ -52,6 +54,59 @@ export interface WalkOptions {
   signal?: AbortSignal;
   /** Optional observer, so a caller can tell a complete walk from a capped one. */
   stats?: WalkStats;
+  /**
+   * The workspace's `.gitignore`, if it has one.
+   *
+   * Carries its own base because a search may start in a subdirectory while the
+   * patterns are written relative to the workspace root — testing `foo` instead of
+   * `src/foo` would silently miss every rule.
+   */
+  gitignore?: GitignoreScope;
+}
+
+export interface GitignoreScope {
+  base: string;
+  matcher: Ignore;
+}
+
+/**
+ * Load the workspace's root `.gitignore`.
+ *
+ * Only the root file: nested `.gitignore` files, `.git/info/exclude` and cross-file
+ * negation precedence are not honoured yet, and saying so is better than behaving
+ * unpredictably. The root file is where the rules that matter in practice live —
+ * `target/`, `vendor/`, `Pods/`, `dist/` — which is exactly the set the built-in
+ * directory list cannot know about.
+ */
+export async function loadGitignore(base: string): Promise<GitignoreScope | undefined> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(path.join(base, ".gitignore"), "utf8");
+  } catch {
+    return undefined;
+  }
+  if (raw.trim() === "") return undefined;
+
+  try {
+    return { base, matcher: ignore().add(raw) };
+  } catch {
+    // A malformed .gitignore must not make every search fail.
+    return undefined;
+  }
+}
+
+function isGitignored(
+  scope: GitignoreScope | undefined,
+  absoluteEntry: string,
+  isDirectory: boolean,
+): boolean {
+  if (scope === undefined) return false;
+
+  const relative = path.relative(scope.base, absoluteEntry);
+  if (relative === "" || relative.startsWith("..")) return false;
+
+  // A trailing slash is how a `.gitignore` says "directories only".
+  return scope.matcher.ignores(isDirectory ? `${relative}/` : relative);
 }
 
 /** Yield file paths relative to `root`, in a stable sorted order. */
@@ -84,6 +139,10 @@ export async function* walkFiles(options: WalkOptions): AsyncGenerator<string> {
 
       const relative =
         relativeDirectory === "" ? entry.name : `${relativeDirectory}/${entry.name}`;
+
+      if (isGitignored(options.gitignore, path.join(absoluteDirectory, entry.name), entry.isDirectory())) {
+        continue;
+      }
 
       if (entry.isDirectory()) {
         stack.push(relative);
