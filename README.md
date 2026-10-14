@@ -71,6 +71,19 @@ npx tsx src/cli/index.ts "the tests fail, find out why and fix it"
 Useful flags: `--read-only`, `--no-bash`, `--tools read,edit,bash`, `--model
 deepseek/deepseek-v4-flash`, `--json`, `--max-iterations`, `--timeout`, `--store-dir`.
 
+### Pointing at your own endpoint
+
+```bash
+tinycode --base-url http://localhost:11434/v1 --model llama3.2 "explain this repo"
+```
+
+Any OpenAI-compatible endpoint works — a local runtime, a self-hosted server, an
+internal gateway. The provider is registered under its own id (default `custom`, or name
+it with `--model my-gateway/<model>`), so the built-in catalog is never disturbed.
+`--api-key` is optional: most local servers ignore the header, and one that needs a real
+key answers 401, which is reported as `auth`. `TINYCODE_BASE_URL`, `TINYCODE_MODEL` and
+`TINYCODE_API_KEY` do the same for deployment.
+
 **No API key means no run.** The CLI refuses to start rather than pretending:
 
 ```
@@ -127,6 +140,7 @@ source, so regenerating an unchanged build produces no diff.
 | A search path that names a file searches that file, and a missing one is reported as missing | `a search path that is a file, not a directory` |
 | Project-specific ignores are honoured, not just a built-in directory list | `.gitignore` — skips `target/`, honours a negation, applies from a deeper search root |
 | Search results are workspace-relative, so they can be fed to another tool | `.gitignore` — applies the workspace's patterns even when the search starts deeper |
+| The whole product runs end to end against a self-hosted endpoint, and reports it | `cli-live.test.ts` — real CLI, real session, real tool call |
 | A file can be located by name even with write and shell tools withheld | `find` — bare patterns match the name anywhere, slash patterns match the path |
 | `run_completed` distinguishes `complete` from `partial` | `cli — end-to-end vertical slice` |
 | Usage is reported, or explicitly unknown — never a fabricated zero | `event rendering` |

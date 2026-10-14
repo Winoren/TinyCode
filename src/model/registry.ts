@@ -37,7 +37,24 @@ export interface ModelResolution {
   availableModels: ModelRef[];
 }
 
+/**
+ * A user-supplied OpenAI- or Anthropic-compatible endpoint.
+ *
+ * The Skill's `scenario-custom-provider` covers exactly this: pointing the agent at a
+ * self-hosted or internal LLM. Without it the harness can only talk to hosted providers
+ * with an API key, which rules out a local model entirely.
+ */
+export interface CustomEndpoint {
+  providerId: string;
+  baseUrl: string;
+  modelId: string;
+  apiKey?: string;
+  api?: "openai-completions" | "anthropic-messages";
+}
+
 export interface ResolveModelOptions {
+  /** Register and use a custom endpoint instead of resolving a hosted provider. */
+  custom?: CustomEndpoint;
   /** `provider/model`, or just `provider` to take its first available model. */
   spec?: string;
   authPath?: string;
@@ -66,6 +83,10 @@ export async function resolveModel(options: ResolveModelOptions = {}): Promise<M
     ...(options.authPath === undefined ? {} : { authPath: options.authPath }),
     ...(options.modelsPath === undefined ? {} : { modelsPath: options.modelsPath }),
   });
+
+  if (options.custom !== undefined) {
+    return resolveCustomEndpoint(modelRuntime, options.custom);
+  }
 
   const envWiredProviders = await wireEnvironmentKeys(modelRuntime, options.env);
   const available = await modelRuntime.getAvailable();
@@ -177,4 +198,63 @@ export function credentialEnvNames(providerIds: readonly string[]): string[] {
     for (const name of findEnvKeys(providerId) ?? []) names.add(name);
   }
   return [...names];
+}
+
+/**
+ * Register a caller-supplied endpoint and return its model.
+ *
+ * Registered under its own provider id so the built-in catalog is never disturbed, and
+ * with `reasoning: false` / text-only input: inventing capabilities for an endpoint we
+ * know nothing about would produce a model that claims to support things it does not.
+ */
+function resolveCustomEndpoint(
+  modelRuntime: ModelRuntime,
+  endpoint: CustomEndpoint,
+): ModelResolution {
+  const api = endpoint.api ?? "openai-completions";
+
+  // The SDK's provider layer insists on a credential and refuses to start without one.
+  // Most self-hosted OpenAI-compatible servers (Ollama, llama.cpp, vLLM) ignore the
+  // Authorization header entirely, so a placeholder is what makes a local model usable at
+  // all. It is a literal string, not a secret. An endpoint that does need a real key
+  // answers 401, which the taxonomy already reports as `auth` — a clear failure rather
+  // than a refusal to start.
+  const apiKey = endpoint.apiKey ?? "tinycode-local-endpoint";
+
+  modelRuntime.registerProvider(endpoint.providerId, {
+    name: `${endpoint.providerId} (custom endpoint)`,
+    baseUrl: endpoint.baseUrl,
+    api,
+    apiKey,
+    models: [
+      {
+        id: endpoint.modelId,
+        name: endpoint.modelId,
+        api,
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128_000,
+        maxTokens: 8_192,
+      },
+    ],
+  });
+
+  const model = modelRuntime.getModel(endpoint.providerId, endpoint.modelId);
+  if (model === undefined) {
+    throw new AgentError(
+      "auth",
+      `the custom endpoint did not register a usable model: ` +
+        `${endpoint.providerId}/${endpoint.modelId} at ${endpoint.baseUrl}`,
+    );
+  }
+
+  const ref = { providerId: endpoint.providerId, modelId: endpoint.modelId };
+  return {
+    model,
+    modelRuntime,
+    label: `${endpoint.providerId}/${endpoint.modelId}`,
+    envWiredProviders: [],
+    availableModels: [ref],
+  };
 }

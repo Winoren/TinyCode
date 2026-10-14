@@ -22,6 +22,9 @@ export interface CliOptions {
   task: string | undefined;
   cwd: string;
   model: string | undefined;
+  /** Endpoint for a self-hosted or OpenAI-compatible model. */
+  baseUrl: string | undefined;
+  apiKey: string | undefined;
   tools: string[];
   json: boolean;
   showThinking: boolean;
@@ -46,11 +49,17 @@ const DEFAULTS = {
   timeoutMs: 300_000,
 };
 
-export function parseArgs(argv: readonly string[]): CliOptions {
+export function parseArgs(
+  argv: readonly string[],
+  env: Record<string, string | undefined> = process.env,
+): CliOptions {
   const options: CliOptions = {
     task: undefined,
     cwd: process.cwd(),
-    model: undefined,
+    // Environment first, so flags can override deployment configuration.
+    model: env.TINYCODE_MODEL,
+    baseUrl: env.TINYCODE_BASE_URL,
+    apiKey: env.TINYCODE_API_KEY,
     tools: [...DEFAULT_TOOL_NAMES],
     json: false,
     showThinking: false,
@@ -100,6 +109,12 @@ export function parseArgs(argv: readonly string[]): CliOptions {
       case "--model":
       case "-m":
         options.model = value("--model");
+        break;
+      case "--base-url":
+        options.baseUrl = value("--base-url");
+        break;
+      case "--api-key":
+        options.apiKey = value("--api-key");
         break;
       case "--store-dir":
         options.storeDir = value("--store-dir");
@@ -155,6 +170,9 @@ export function parseArgs(argv: readonly string[]): CliOptions {
   if (options.tools.length === 0) {
     throw new CliUsageError("no tools selected; the agent would be unable to do anything");
   }
+  if (options.baseUrl !== undefined && options.model === undefined) {
+    throw new CliUsageError("--base-url needs --model to name the model the endpoint serves");
+  }
 
   return options;
 }
@@ -167,7 +185,14 @@ export function usageText(): string {
     '  tinycode [options] "<task>"',
     "",
     "Options:",
-    "  -m, --model <provider/model>  Model to use (default: first authenticated)",
+    "  -m, --model <provider/model>  Model to use (default: first authenticated). With",
+    "                                --base-url, <model> or <provider>/<model>.",
+    "      --base-url <url>          OpenAI-compatible endpoint (self-hosted, local, or",
+    "                                internal). Its model is registered as provider",
+    "                                \"custom\" unless --model names one.",
+    "      --api-key <key>           Credential for --base-url. Optional: local servers",
+    "                                usually ignore it, and one that needs a real key",
+    "                                will answer 401.",
     "      --cwd <dir>               Workspace root (default: current directory)",
     "      --read-only               Expose only read, ls, grep and find",
     "      --no-bash                 Remove bash from the tool set",
@@ -190,5 +215,6 @@ export function usageText(): string {
     "",
     "Environment:",
     "  DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, ... provide provider auth.",
+    "  TINYCODE_BASE_URL / TINYCODE_MODEL / TINYCODE_API_KEY do the same as the flags",
   ].join("\n");
 }

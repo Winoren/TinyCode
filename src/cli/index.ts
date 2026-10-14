@@ -16,7 +16,8 @@
 
 import readline from "node:readline/promises";
 
-import { bootstrap, type BootstrapOptions } from "../bootstrap.ts";
+import { bootstrap, type BootstrapOptions, } from "../bootstrap.ts";
+import type { CustomEndpoint } from "../model/registry.ts";
 import type { AgentEvent } from "../core/contracts.ts";
 import type { HumanInputChannel } from "../core/loop.ts";
 import { CliUsageError, parseArgs, usageText } from "./args.ts";
@@ -60,9 +61,15 @@ export async function main(
   let modelLabel: string;
   let toolNames: string[];
   try {
+    const customEndpoint =
+      options.baseUrl === undefined
+        ? undefined
+        : buildCustomEndpoint(options.baseUrl, options.model as string, options.apiKey);
+
     const bootstrapped = await bootstrap({
       ...bootstrapOptions,
       cwd: options.cwd,
+      ...(customEndpoint === undefined ? {} : { customEndpoint }),
       ...(options.model === undefined ? {} : { modelSpec: options.model }),
       toolNames: options.tools,
       budget: {
@@ -195,4 +202,33 @@ if (isDirectRun) {
       process.stderr.write(`fatal: ${describe(error)}\n`);
       process.exitCode = 1;
     });
+}
+
+/**
+ * Turn the endpoint flags into a provider registration.
+ *
+ * `--model` doubles as the model id here because with `--base-url` there is no hosted
+ * catalog to choose from: whatever the endpoint serves is the only option, and the user
+ * is the only one who knows its name. A `<provider>/<model>` form is still accepted so the
+ * registration can be named something meaningful in the trace.
+ */
+function buildCustomEndpoint(
+  baseUrl: string,
+  model: string,
+  apiKey: string | undefined,
+): CustomEndpoint {
+  const slash = model.indexOf("/");
+  const providerId = slash === -1 ? "custom" : model.slice(0, slash);
+  const modelId = slash === -1 ? model : model.slice(slash + 1);
+
+  if (providerId === "" || modelId === "") {
+    throw new CliUsageError(`malformed --model "${model}"; expected "<model>" or "<provider>/<model>"`);
+  }
+
+  return {
+    providerId,
+    baseUrl,
+    modelId,
+    ...(apiKey === undefined ? {} : { apiKey }),
+  };
 }

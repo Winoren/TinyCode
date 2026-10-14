@@ -18,7 +18,7 @@ import { DEFAULT_BUDGET, type RunBudget, type ToolPort } from "./core/contracts.
 import type { HumanInputChannel, RunDriver } from "./core/loop.ts";
 import { destructiveCommandPolicy, type GatePolicy } from "./core/gate.ts";
 import { createRedactor } from "./core/redact.ts";
-import { credentialEnvNames, resolveModel } from "./model/registry.ts";
+import { credentialEnvNames, resolveModel, type CustomEndpoint } from "./model/registry.ts";
 import {
   AgentRuntime,
   createRuntime,
@@ -36,6 +36,8 @@ import { DEFAULT_TOOL_NAMES } from "./cli/args.ts";
 export interface BootstrapOptions {
   cwd: string;
   modelSpec?: string;
+  /** Point at a self-hosted or internal endpoint instead of a hosted provider. */
+  customEndpoint?: CustomEndpoint;
   toolNames?: readonly string[];
   budget?: Partial<RunBudget>;
   humanInput?: HumanInputChannel;
@@ -98,9 +100,10 @@ export async function bootstrap(options: BootstrapOptions): Promise<Bootstrapped
   let buildPi: (() => RunDriver) | undefined;
 
   if (options.driver === undefined && options.driverFactory === undefined) {
-    const resolution = await resolveModel(
-      options.modelSpec === undefined ? {} : { spec: options.modelSpec },
-    );
+    const resolution = await resolveModel({
+      ...(options.modelSpec === undefined ? {} : { spec: options.modelSpec }),
+      ...(options.customEndpoint === undefined ? {} : { custom: options.customEndpoint }),
+    });
     modelLabel = resolution.label;
     envWiredProviders = resolution.envWiredProviders;
     buildPi = () =>
@@ -122,6 +125,11 @@ export async function bootstrap(options: BootstrapOptions): Promise<Bootstrapped
   for (const providerId of envWiredProviders) {
     const key = getEnvApiKey(providerId);
     if (key !== undefined) secretCandidates.push(key);
+  }
+  // A custom endpoint's key is held by us, not discovered from the environment, so it has
+  // to be redacted explicitly — it would otherwise be the one credential we failed to hide.
+  if (options.customEndpoint?.apiKey !== undefined) {
+    secretCandidates.push(options.customEndpoint.apiKey);
   }
   const redact = createRedactor(secretCandidates);
 
