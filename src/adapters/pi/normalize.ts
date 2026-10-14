@@ -92,6 +92,11 @@ export function normalizeSessionEvent(
       // equivalent of the Core loop asking the model. Without it the Pi path never
       // emitted `model_requested`, and the two paths' traces were not comparable —
       // which is exactly what the golden-transcript equivalence check needs them to be.
+      //
+      // It is also what `maxIterations` counts. Counting `agent_end` instead was a real
+      // defect: that event fires **once per prompt**, not once per model call, so the
+      // iteration budget was measuring the wrong thing and could barely ever trip.
+      scratch.turns += 1;
       return [
         { type: "model_requested", ...(scratch.model === undefined ? {} : { model: scratch.model }) },
       ];
@@ -145,8 +150,7 @@ export function normalizeSessionEvent(
             observedAt: now(),
           };
 
-      if (isError && observation.error?.code === "invalid_tool") {
-        // A refused tool is an absent capability, not a transient failure.
+      if (isError && observation.error !== undefined && isRefusal(observation.error.message)) {
         scratch.missing.add(event.toolName);
       }
 
@@ -183,7 +187,6 @@ export function normalizeSessionEvent(
       // The deepseek path is known to omit `usage` here; leave it undefined rather
       // than reporting fabricated zeros.
       scratch.usage = lastAssistant?.usage ?? scratch.usage;
-      scratch.turns += 1;
       return [];
     }
 
@@ -193,6 +196,18 @@ export function normalizeSessionEvent(
       // no product-level meaning that the events above do not already carry.
       return [];
   }
+}
+
+/**
+ * Whether an error means the capability itself was unavailable.
+ *
+ * A missing file is evidence the model can act on; a tool that does not exist is an absent
+ * capability. Only the latter belongs in `missingMaterial` — treating every tool error as
+ * missing material made an ordinary "read a path that is not there" report the run as
+ * partial. This mirrors the Core loop, which records missing material only for a refusal.
+ */
+function isRefusal(message: string): boolean {
+  return /unknown tool|not in allowlist|tool .* not found/i.test(message);
 }
 
 /** The answer text: the last segment if the model spoke after its final action. */

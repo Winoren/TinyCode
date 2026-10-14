@@ -110,6 +110,8 @@ describe("aligning with the Core loop's vocabulary", () => {
     expect(harness.drafts).toEqual([
       { type: "model_requested", model: "deepseek/deepseek-v4-flash" },
     ]);
+    // A turn is one model call, which is what `maxIterations` counts.
+    expect(harness.scratch.turns).toBe(1);
   });
 
   it("omits the model when the driver did not supply one", () => {
@@ -233,7 +235,7 @@ describe("tool events", () => {
 });
 
 describe("agent_end", () => {
-  it("captures stop reason and usage, and counts a turn", () => {
+  it("captures stop reason and usage", () => {
     const harness = makeHarness();
     feed(harness, {
       type: "agent_end",
@@ -246,8 +248,12 @@ describe("agent_end", () => {
 
     expect(harness.scratch.stopReason).toBe("stop");
     expect(harness.scratch.usage).toEqual({ input: 12, output: 34 });
-    expect(harness.scratch.turns).toBe(1);
     expect(harness.drafts).toEqual([]);
+
+    // `agent_end` fires once per *prompt*, not once per model call, so it must not count
+    // turns. It did, which meant `maxIterations` was measuring the wrong thing and could
+    // barely ever trip — found by the live test that finally reached that code path.
+    expect(harness.scratch.turns).toBe(0);
   });
 
   it("leaves usage undefined when the provider omits it", () => {

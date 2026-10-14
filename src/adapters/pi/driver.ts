@@ -257,7 +257,11 @@ export function piDriver(options: PiDriverOptions): RunDriver {
           toolStartGate,
           enqueue,
         );
-        if (event.type === "tool_execution_start" || event.type === "agent_end") {
+        if (
+          event.type === "turn_start" ||
+          event.type === "tool_execution_start" ||
+          event.type === "agent_end"
+        ) {
           enforceBudgets();
         }
       } catch (error) {
@@ -334,11 +338,13 @@ export function piDriver(options: PiDriverOptions): RunDriver {
       return;
     }
 
+    const missing = new Set([...scratch.missing, ...toolStartGate.refusedToolNames]);
+
     yield {
       type: "run_completed",
-      status: scratch.missing.size > 0 ? "partial" : "complete",
+      status: missing.size > 0 ? "partial" : "complete",
       result: content,
-      ...(scratch.missing.size > 0 ? { missingMaterial: [...scratch.missing].sort() } : {}),
+      ...(missing.size > 0 ? { missingMaterial: [...missing].sort() } : {}),
     };
   };
 }
@@ -378,6 +384,8 @@ export class ToolStartGate {
   private held: EventDraft[] = [];
   /** Tool calls whose start was withheld and never released. */
   private readonly abandoned = new Set<string>();
+  /** Names of tools whose start was withheld and never released. */
+  private readonly abandonedNames = new Set<string>();
 
   constructor(
     private readonly policy: GatePolicy | undefined,
@@ -410,7 +418,10 @@ export class ToolStartGate {
     if (approved) return released;
 
     for (const draft of released) {
-      if (draft.type === "tool_started") this.abandoned.add(draft.toolCallId);
+      if (draft.type === "tool_started") {
+        this.abandoned.add(draft.toolCallId);
+        this.abandonedNames.add(draft.toolName);
+      }
     }
     return [];
   }
@@ -431,6 +442,11 @@ export class ToolStartGate {
 
   get abandonedCount(): number {
     return this.abandoned.size;
+  }
+
+  /** Tools the operator refused: an absent capability, so they are missing material. */
+  get refusedToolNames(): readonly string[] {
+    return [...this.abandonedNames].sort();
   }
 
   get pending(): number {

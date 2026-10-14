@@ -16,7 +16,7 @@ import {
   type ToolDefinition as PiToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 
-import { isToolOutput, type ToolPort } from "../../core/contracts.ts";
+import { AgentError, isToolOutput, type ToolPort } from "../../core/contracts.ts";
 import { toTranscriptText } from "../../core/text.ts";
 import type { AnyToolDefinition } from "../../tools/types.ts";
 import { toParameters } from "./schema.ts";
@@ -53,10 +53,24 @@ export function definePiTools(
       ) => {
         // The SDK may pass `undefined`; our ToolPort requires a real signal.
         const effectiveSignal = signal ?? new AbortController().signal;
-        const result = await port.execute(
-          { name: definition.name, arguments: (params ?? {}) as Record<string, unknown> },
-          effectiveSignal,
-        );
+
+        let result: unknown;
+        try {
+          result = await port.execute(
+            { name: definition.name, arguments: (params ?? {}) as Record<string, unknown> },
+            effectiveSignal,
+          );
+        } catch (error) {
+          // The SDK reports a thrown tool error as `error.message` alone, so the taxonomy
+          // would be lost and classification would fall back to guessing at message text.
+          // Carrying the code in the message is the only channel it leaves open — and it
+          // reads better for the model too, which learns whether it made a usage mistake
+          // or hit something transient.
+          if (error instanceof AgentError) {
+            throw new Error(`${error.code}: ${error.message}`);
+          }
+          throw error;
+        }
 
         return {
           content: [

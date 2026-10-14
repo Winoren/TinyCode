@@ -44,9 +44,13 @@ const PATTERN_RULES: readonly PatternRule[] = [
   {
     code: "invalid_tool",
     pattern:
-      /unknown tool|not in allowlist|declined by the operator|invalid (tool )?(arguments|parameters)|schema validation|zod/i,
+      /unknown tool|not in allowlist|declined by the operator|tool .* not found|was not executed|invalid (tool )?(arguments|parameters)|schema validation|zod/i,
   },
 ];
+
+/** A `<run-error-code>: ` prefix, as written by the SDK tool bridge. */
+const LEADING_ERROR_CODE =
+  /^(budget_iterations|budget_tools|budget_timeout|no_progress|rate_limited|timeout|auth|invalid_tool|provider_unavailable|runtime_error):\s/;
 
 function messageOf(error: unknown): string {
   if (typeof error === "string") return error;
@@ -106,6 +110,15 @@ export function normalizeUnknownError(error: unknown): RunError {
   }
 
   const message = messageOf(error);
+
+  // A code that travelled with the message wins over pattern matching: it is a fact
+  // rather than an inference. Used where an error crosses a boundary that only forwards
+  // `message` (the SDK's tool bridge does exactly that).
+  const declared = LEADING_ERROR_CODE.exec(message);
+  if (declared !== null) {
+    return { code: declared[1] as RunErrorCode, message };
+  }
+
   for (const rule of PATTERN_RULES) {
     if (rule.pattern.test(message)) return { code: rule.code, message };
   }
