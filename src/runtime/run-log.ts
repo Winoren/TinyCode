@@ -160,8 +160,13 @@ export class JsonlRunLog implements RunLog {
   }
 
   async saveRun(run: Run): Promise<void> {
+    // Snapshot synchronously, before yielding to the serialized queue. The caller's
+    // `run` object is mutable and its status changes during a run, so stringifying
+    // inside the queued closure would persist whatever the status had become by the
+    // time the queue drained — not the state being recorded.
+    const snapshot: Run = { ...run };
     await this.serialize("__runs__", async () => {
-      await fs.appendFile(this.runsIndexFile, `${JSON.stringify(run)}\n`, "utf8");
+      await fs.appendFile(this.runsIndexFile, `${JSON.stringify(snapshot)}\n`, "utf8");
     });
   }
 

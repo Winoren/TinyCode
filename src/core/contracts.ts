@@ -201,11 +201,23 @@ export type EventDraft =
   | { type: "human_input_requested"; question: string }
   | { type: "human_input_received"; input: unknown }
   | { type: "usage_reported"; usage: UsageReport }
-  | {
-      type: "run_completed";
+  | { type: "run_completed";
       status: "complete" | "partial";
       result: string;
       missingMaterial?: string[];
+    }
+  /**
+   * A retryable attempt failed and another will follow. Emitted instead of a
+   * terminal `run_failed`, because this attempt's failure is not the run's outcome —
+   * an auditor who saw only terminal events could not tell a transient provider
+   * hiccup from a real failure.
+   */
+  | { type: "retry_scheduled";
+      /** 1-based number of the attempt that is about to start. */
+      attempt: number;
+      maxAttempts: number;
+      delayMs: number;
+      error: RunError;
     }
   | { type: "run_failed"; error: RunError }
   | { type: "run_cancelled" }

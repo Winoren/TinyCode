@@ -19,11 +19,15 @@
     },
     {
       "name": "05-human-confirmation",
-      "description": "run_completed / 9 events"
+      "description": "run_completed / 10 events"
     },
     {
       "name": "06-budget-exhausted",
       "description": "run_failed / 18 events"
+    },
+    {
+      "name": "07-retry-then-succeed",
+      "description": "run_completed / 3 events"
     }
   ]
 }

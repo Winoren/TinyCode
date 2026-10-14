@@ -93,6 +93,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<Bootstrapped
         modelRuntime: resolution.modelRuntime,
         toolPort,
         tools,
+        maxRetries: budget.maxRetries,
         onDiagnostics: collect,
       });
   }

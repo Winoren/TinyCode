@@ -16,11 +16,12 @@ import {
   DEFAULT_BUDGET,
   initialState,
   type AgentEvent,
+  type RunError,
   type Task,
 } from "../src/core/contracts.ts";
 import { coreLoopDriver, type RunDriver } from "../src/core/loop.ts";
 import { fakeTools, scriptedModel } from "../src/adapters/fake/index.ts";
-import { AgentRuntime, createRuntime } from "../src/runtime/runtime.ts";
+import { AgentRuntime, backoffDelayMs, createRuntime } from "../src/runtime/runtime.ts";
 import { InMemoryRunLog, JsonlRunLog, parseEventLog } from "../src/runtime/run-log.ts";
 import { InMemorySessionStore, JsonSessionStore } from "../src/runtime/session-store.ts";
 
@@ -73,6 +74,9 @@ async function makeRuntime(
     runLog,
     sessionStore,
     newId: idGenerator(),
+    // Real backoff would make these tests slow and time-dependent; the retry
+    // behaviour under test is the scheduling, not the wall clock.
+    sleep: async () => true,
     ...overrides,
   });
   return { runtime, runLog };
@@ -379,5 +383,143 @@ describe("runtime — session isolation", () => {
     expect(secondState.observations).toHaveLength(0);
     expect(first.session.runs).toHaveLength(1);
     expect(second.session.runs).toHaveLength(1);
+  });
+});
+
+/** Fails retryably for the first `failures` attempts, then succeeds. */
+function flakyDriver(failures: number, error: RunError): RunDriver {
+  let calls = 0;
+  return async function* () {
+    calls += 1;
+    if (calls <= failures) {
+      yield { type: "run_failed", error };
+      return;
+    }
+    yield { type: "run_completed", status: "complete", result: "recovered" };
+  };
+}
+
+const RETRYABLE: RunError = { code: "provider_unavailable", message: "503 Service Unavailable" };
+const NOT_RETRYABLE: RunError = { code: "auth", message: "401 Unauthorized" };
+
+describe("runtime — bounded, visible retry", () => {
+  it("retries a retryable failure and completes", async () => {
+    const { runtime } = await makeRuntime(flakyDriver(2, RETRYABLE), {
+      budget: { ...DEFAULT_BUDGET, maxRetries: 2 },
+    });
+
+    const events = await collect(runtime.run(TASK));
+
+    expect(events.filter((event) => event.type === "retry_scheduled")).toHaveLength(2);
+    expect(terminals(events)).toHaveLength(1);
+    expect(terminals(events)[0]?.type).toBe("run_completed");
+  });
+
+  it("does not log a terminal event for an attempt that will be retried", async () => {
+    const { runtime } = await makeRuntime(flakyDriver(1, RETRYABLE), {
+      budget: { ...DEFAULT_BUDGET, maxRetries: 2 },
+    });
+
+    const events = await collect(runtime.run(TASK));
+
+    // The failed attempt must not appear as a run_failed: that would read as two
+    // runs in one log.
+    expect(events.filter((event) => event.type === "run_failed")).toHaveLength(0);
+    const retry = events.find((event) => event.type === "retry_scheduled");
+    expect(retry).toMatchObject({ attempt: 2, maxAttempts: 3, delayMs: 250 });
+  });
+
+  it("stops retrying at maxRetries and reports the last failure", async () => {
+    const { runtime } = await makeRuntime(flakyDriver(9, RETRYABLE), {
+      budget: { ...DEFAULT_BUDGET, maxRetries: 1 },
+    });
+
+    const events = await collect(runtime.run(TASK));
+
+    expect(events.filter((event) => event.type === "retry_scheduled")).toHaveLength(1);
+    expect(terminals(events)).toHaveLength(1);
+    expect(terminals(events)[0]).toMatchObject({
+      type: "run_failed",
+      error: { code: "provider_unavailable" },
+    });
+  });
+
+  it("never retries a non-retryable failure", async () => {
+    const { runtime } = await makeRuntime(flakyDriver(9, NOT_RETRYABLE), {
+      budget: { ...DEFAULT_BUDGET, maxRetries: 3 },
+    });
+
+    const events = await collect(runtime.run(TASK));
+
+    expect(events.filter((event) => event.type === "retry_scheduled")).toHaveLength(0);
+    expect(terminals(events)[0]).toMatchObject({ type: "run_failed", error: { code: "auth" } });
+  });
+
+  it("does not retry when a cancellation arrives during the backoff", async () => {
+    const controller = new AbortController();
+    const { runtime } = await makeRuntime(flakyDriver(9, RETRYABLE), {
+      budget: { ...DEFAULT_BUDGET, maxRetries: 3 },
+      sleep: async () => {
+        controller.abort();
+        return false; // aborted, not slept
+      },
+    });
+
+    const events = await collect(runtime.run(TASK, controller.signal));
+
+    expect(terminals(events)).toHaveLength(1);
+    expect(terminals(events)[0]?.type).toBe("run_cancelled");
+  });
+
+  it("backs off exponentially and caps the delay", () => {
+    expect(backoffDelayMs(1)).toBe(250);
+    expect(backoffDelayMs(2)).toBe(500);
+    expect(backoffDelayMs(3)).toBe(1_000);
+    // Capped rather than unbounded, so a long retry chain cannot stall for minutes.
+    expect(backoffDelayMs(20)).toBe(4_000);
+  });
+});
+
+describe("runtime — waiting for a human is a durable state", () => {
+  const askingDriver: RunDriver = async function* (_state, ctx) {
+    yield { type: "human_input_requested", question: "Rewrite the migration?" };
+    const answer = await ctx.humanInput?.("Rewrite the migration?", ctx.signal);
+    yield { type: "human_input_received", input: answer };
+    yield { type: "run_completed", status: "complete", result: "left it alone" };
+  };
+
+  it("marks the run awaiting_human while the question is open, then resumes it", async () => {
+    const { runtime, runLog } = await makeRuntime(askingDriver, {
+      humanInput: async () => "no",
+    });
+
+    const events: AgentEvent[] = [];
+    let statusWhileWaiting: string | undefined;
+    let runId: string | undefined;
+
+    for await (const event of runtime.run(TASK)) {
+      events.push(event);
+      runId ??= event.runId;
+      if (event.type === "human_input_requested") {
+        // The save is fire-and-forget; let it land before observing.
+        await Promise.resolve();
+        statusWhileWaiting = (await runLog.loadRun(event.runId))?.status;
+      }
+    }
+
+    expect(statusWhileWaiting).toBe("awaiting_human");
+    expect(events.map((event) => event.type)).toContain("run_resumed");
+    expect(terminals(events)[0]).toMatchObject({ type: "run_completed" });
+    expect((await runLog.loadRun(runId as string))?.status).toBe("completed");
+  });
+
+  it("places run_resumed immediately after the human's answer", async () => {
+    const { runtime } = await makeRuntime(askingDriver, { humanInput: async () => "no" });
+
+    const events = await collect(runtime.run(TASK));
+    const answered = events.findIndex((event) => event.type === "human_input_received");
+
+    expect(answered).toBeGreaterThan(-1);
+    expect(events[answered + 1]?.type).toBe("run_resumed");
   });
 });

@@ -38,11 +38,11 @@ interface Scenario {
   driver: () => RunDriver;
   humanInput?: (question: string) => Promise<unknown>;
   /** Per-scenario so one fixture can exercise exhaustion without starving the rest. */
-  budget?: { maxIterations: number; maxToolCalls: number };
+  budget?: { maxIterations: number; maxToolCalls: number; maxRetries: number };
 }
 
 /** Generous by default: these fixtures demonstrate semantics, not budget edges. */
-const DEFAULT_SCENARIO_BUDGET = { maxIterations: 8, maxToolCalls: 16 };
+const DEFAULT_SCENARIO_BUDGET = { maxIterations: 8, maxToolCalls: 16, maxRetries: 1 };
 
 const TASK: Task = { id: "golden-task", input: "make the failing test pass", cwd: "/workspace" };
 
@@ -124,8 +124,28 @@ const SCENARIOS: Scenario[] = [
     humanInput: async () => "no, do not touch it",
   },
   {
+    name: "07-retry-then-succeed",
+    task: TASK,
+    driver: () => {
+      let calls = 0;
+      return async function* () {
+        calls += 1;
+        if (calls === 1) {
+          // A transient provider failure: must surface as retry_scheduled, never as
+          // the run's terminal event.
+          yield {
+            type: "run_failed",
+            error: { code: "provider_unavailable", message: "503 Service Unavailable" },
+          };
+          return;
+        }
+        yield { type: "run_completed", status: "complete", result: "recovered on retry." };
+      };
+    },
+  },
+  {
     name: "06-budget-exhausted",
-    budget: { maxIterations: 3, maxToolCalls: 16 },
+    budget: { maxIterations: 3, maxToolCalls: 16, maxRetries: 0 },
     task: TASK,
     driver: () =>
       coreLoopDriver({
@@ -178,9 +198,11 @@ for (const scenario of SCENARIOS) {
       model: "fake-model",
       budget: {
         ...(scenario.budget ?? DEFAULT_SCENARIO_BUDGET),
-        maxRetries: 0,
         timeoutMs: 60_000,
       },
+      // A real backoff would make regeneration slow and time-dependent, and the
+      // scheduling is what the fixture pins, not the wall clock.
+      sleep: async () => true,
       ...(scenario.humanInput === undefined ? {} : { humanInput: scenario.humanInput }),
     },
   );
@@ -225,6 +247,9 @@ for (const scenario of SCENARIOS) {
       `${String(terminal?.type)}${summary.terminalStatus === null ? "" : ` (${String(summary.terminalStatus)})`}`,
   );
 }
+
+// Sorted so the index reads predictably regardless of declaration order above.
+index.sort((a, b) => a.name.localeCompare(b.name));
 
 await fs.writeFile(
   path.join(OUTPUT_DIRECTORY, "index.json"),

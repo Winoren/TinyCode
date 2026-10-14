@@ -1,0 +1,3 @@
+{"type":"run_started","runId":"id-1","sequence":0,"timestamp":1700000000003}
+{"type":"retry_scheduled","attempt":2,"maxAttempts":2,"delayMs":250,"error":{"code":"provider_unavailable","message":"503 Service Unavailable"},"runId":"id-1","sequence":1,"timestamp":1700000000004}
+{"type":"run_completed","status":"complete","result":"recovered on retry.","runId":"id-1","sequence":2,"timestamp":1700000000005}

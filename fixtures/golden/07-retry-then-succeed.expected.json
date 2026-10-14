@@ -1,0 +1,16 @@
+{
+  "scenario": "07-retry-then-succeed",
+  "terminalType": "run_completed",
+  "terminalStatus": "complete",
+  "missingMaterial": [],
+  "eventCount": 3,
+  "observationCount": 0,
+  "transcriptLength": 1,
+  "toolCalls": 0,
+  "iteration": 0,
+  "eventTypes": [
+    "retry_scheduled",
+    "run_completed",
+    "run_started"
+  ]
+}

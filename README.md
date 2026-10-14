@@ -81,11 +81,13 @@ npm run golden      # regenerate the golden transcript corpus (deliberate, not C
 
 ### Golden transcripts
 
-[`fixtures/golden/`](fixtures/golden) holds six complete event logs from real runs,
+[`fixtures/golden/`](fixtures/golden) holds seven complete event logs from real runs,
 each paired with a summary of the state it replays to. They exist so that a change in
 the event vocabulary, in replay semantics, or in the SDK adapter cannot land silently:
 if semantics move, [`tests/golden.test.ts`](tests/golden.test.ts) stops matching and the
-corpus must be regenerated on purpose.
+corpus must be regenerated on purpose. The set covers all three terminal shapes —
+complete, partial with missing material, and failed — plus a retry that recovers and a
+human confirmation round trip.
 
 Determinism is injected, not hoped for — the generator supplies a fixed clock and id
 source, so regenerating an unchanged build produces no diff.
@@ -98,6 +100,8 @@ source, so regenerating an unchanged build produces no diff.
 | Every run has exactly one terminal event | `runtime — lifecycle guarantees` |
 | A tool failure is visible and does not corrupt other state | `core loop — refusal and isolation` |
 | Cancellation stops work and is never retried, and is distinct from a timeout | `runtime — termination is never fabricated` |
+| Retry is bounded, visible, and skipped for non-retryable and cancelled runs | `runtime — bounded, visible retry` |
+| Waiting for a human is a durable `awaiting_human` state that resumes explicitly | `runtime — waiting for a human is a durable state` |
 | A restart recovers state, and replay rebuilds it exactly | `runtime — persistence`, `core loop — replay equivalence` |
 | Budgets terminate a run predictably | `core loop — budgets and termination`, and the Pi driver enforces turns and tool calls itself |
 | `run_completed` distinguishes `complete` from `partial` | `cli — end-to-end vertical slice` |
@@ -149,6 +153,11 @@ Honest gaps, not a backlog:
    implemented and type-checked, but the code path that trips it only runs during a
    real provider turn, which this environment cannot execute. The deterministic path's
    equivalent is covered by tests.
+7. **A Runtime-level retry restarts the SDK conversation.** Retry is proven on the
+   deterministic path, and the SDK's own request-level retry is configured from the
+   same `maxRetries`, but a run-level retry on the Pi path creates a fresh session —
+   accumulated observations survive in `AgentState`, the provider's conversation does
+   not. Not verified against a live provider.
 
 ## Corrections to the Skill
 

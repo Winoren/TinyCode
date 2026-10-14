@@ -64,6 +64,12 @@ export interface PiDriverOptions {
   modelRuntime?: SessionOptions["modelRuntime"];
   agentDir?: string;
   thinkingLevel?: NonNullable<SessionOptions["thinkingLevel"]>;
+  /**
+   * Provider-level retry budget handed to the SDK. The Runtime also retries, but the
+   * SDK can retry a single request without discarding the conversation, so both
+   * layers are configured from the same number rather than one being hardcoded.
+   */
+  maxRetries?: number;
   /** Our tool implementations. */
   toolPort: ToolPort;
   /** The tools we intend to expose; also becomes the SDK allowlist. */
@@ -121,7 +127,10 @@ export function buildPiSessionOptions(options: PiDriverOptions): PiSessionPlan {
       tools: options.tools.map((tool) => tool.name),
       customTools: bridge.tools,
       sessionManager: SessionManager.inMemory(options.cwd),
-      settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
+      settingsManager: SettingsManager.inMemory({
+        compaction: { enabled: false },
+        retry: { enabled: true, maxRetries: options.maxRetries ?? 2 },
+      }),
       resourceLoader,
     },
   };

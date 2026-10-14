@@ -81,6 +81,19 @@ export function createEventRenderer(
           line(`? ${event.question}`);
           return;
 
+        case "retry_scheduled":
+          // Visible on purpose: without this line a transient provider failure and a
+          // real failure look identical to the person watching.
+          sinks.err(
+            `  ↻ retry ${event.attempt}/${event.maxAttempts} in ${event.delayMs}ms ` +
+              `after ${event.error.code}\n`,
+          );
+          return;
+
+        case "run_resumed":
+          // The question and answer are already on screen; nothing to add.
+          return;
+
         case "run_completed": {
           if (wroteText) sinks.out("\n");
           if (event.result.trim() !== "") {

@@ -2,8 +2,9 @@
 {"type":"model_requested","model":"fake-model","runId":"id-1","sequence":1,"timestamp":1700000000006}
 {"type":"decision_made","decision":{"kind":"ask_human","question":"Rewrite the migration in place?"},"runId":"id-1","sequence":2,"timestamp":1700000000007}
 {"type":"human_input_requested","question":"Rewrite the migration in place?","runId":"id-1","sequence":3,"timestamp":1700000000008}
-{"type":"human_input_received","input":"no, do not touch it","runId":"id-1","sequence":4,"timestamp":1700000000009}
-{"type":"model_requested","model":"fake-model","runId":"id-1","sequence":5,"timestamp":1700000000011}
-{"type":"decision_made","decision":{"kind":"respond","content":"Left the migration untouched."},"runId":"id-1","sequence":6,"timestamp":1700000000012}
-{"type":"usage_reported","usage":{"toolCalls":0,"durationMs":9,"model":"fake-model"},"runId":"id-1","sequence":7,"timestamp":1700000000014}
-{"type":"run_completed","status":"complete","result":"Left the migration untouched.","runId":"id-1","sequence":8,"timestamp":1700000000015}
+{"type":"human_input_received","input":"no, do not touch it","runId":"id-1","sequence":4,"timestamp":1700000000010}
+{"type":"run_resumed","runId":"id-1","sequence":5,"timestamp":1700000000012}
+{"type":"model_requested","model":"fake-model","runId":"id-1","sequence":6,"timestamp":1700000000014}
+{"type":"decision_made","decision":{"kind":"respond","content":"Left the migration untouched."},"runId":"id-1","sequence":7,"timestamp":1700000000015}
+{"type":"usage_reported","usage":{"toolCalls":0,"durationMs":12,"model":"fake-model"},"runId":"id-1","sequence":8,"timestamp":1700000000017}
+{"type":"run_completed","status":"complete","result":"Left the migration untouched.","runId":"id-1","sequence":9,"timestamp":1700000000018}

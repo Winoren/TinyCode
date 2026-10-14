@@ -3,7 +3,7 @@
   "terminalType": "run_completed",
   "terminalStatus": "complete",
   "missingMaterial": [],
-  "eventCount": 9,
+  "eventCount": 10,
   "observationCount": 0,
   "transcriptLength": 3,
   "toolCalls": 0,
@@ -14,6 +14,7 @@
     "human_input_requested",
     "model_requested",
     "run_completed",
+    "run_resumed",
     "run_started",
     "usage_reported"
   ]

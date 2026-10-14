@@ -149,6 +149,25 @@ describe("event rendering", () => {
     expect(err).not.toContain("in 0");
   });
 
+  it("surfaces a scheduled retry so a transient failure is distinguishable", () => {
+    const { err } = render([
+      {
+        ...base,
+        sequence: 0,
+        type: "retry_scheduled",
+        attempt: 2,
+        maxAttempts: 3,
+        delayMs: 250,
+        error: { code: "provider_unavailable", message: "503 Service Unavailable" },
+      },
+      { ...base, sequence: 1, type: "run_completed", status: "complete", result: "recovered" },
+    ]);
+
+    expect(err).toContain("retry 2/3");
+    expect(err).toContain("provider_unavailable");
+    expect(err).toContain("250ms");
+  });
+
   it("emits raw JSONL when asked", () => {
     const { out } = render(
       [{ ...base, sequence: 0, type: "run_cancelled" }],
