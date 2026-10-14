@@ -117,6 +117,9 @@ source, so regenerating an unchanged build produces no diff.
 | A restart recovers state, and replay rebuilds it exactly | `runtime — persistence`, `core loop — replay equivalence` |
 | The Pi path's live state equals what replay reconstructs from its events | `pi-normalize — state mutation agrees with replay` |
 | The real SDK session runs a tool call, streams, and terminates — against a stub provider, so no key is needed | `pi-live.test.ts` |
+| Tool and iteration budgets, cancellation, timeout and retry behave the same on the real SDK path | `pi-live.test.ts` — budgets, cancellation and failure |
+| A failed tool is evidence; only a refused *capability* is missing material | `pi-live.test.ts` — classifies a real tool failure |
+| An error's code survives a boundary that forwards only its message | `pi-live.test.ts` — classifies a real tool failure |
 | The real and fake paths produce the same semantic event sequence | `pi-normalize — the real and fake paths agree on Core semantics` |
 | A gated action is not reported as started before it is approved, on either path | `pi-adapter — a gated action is not reported as started before it is approved` |
 | Budgets terminate a run predictably | `core loop — budgets and termination`, and the Pi driver enforces turns and tool calls itself |
@@ -205,15 +208,18 @@ Honest gaps, not a backlog:
    matter in practice live.
 6. **No compaction, sub-agents, MCP or permissions UI.** Each was postponed until a
    real task demonstrates the need.
-7. **The Pi path's budget enforcement is unverified against a live model.** It is
-   implemented and type-checked, but the code path that trips it only runs during a
-   real provider turn, which this environment cannot execute. The deterministic path's
-   equivalent is covered by tests.
-8. **A Runtime-level retry restarts the SDK conversation.** Retry is proven on the
-   deterministic path, and the SDK's own request-level retry is configured from the
-   same `maxRetries`, but a run-level retry on the Pi path creates a fresh session —
+7. **The Pi path's enforcement has never met a real model's behaviour.** Its tool and
+   iteration budgets, cancellation, timeout, retry, tool-error classification and usage
+   extraction are all exercised on the real SDK path by
+   [`tests/pi-live.test.ts`](tests/pi-live.test.ts). What a stub cannot supply is a real
+   model doing something unexpected: a malformed tool call, a refusal, a long reasoning
+   turn.
+8. **A Runtime-level retry restarts the SDK conversation.** Retry is proven on both the
+   deterministic path and the real SDK path (a stub returning 503 twice, then
+   succeeding), and the SDK's own request-level retry is configured from the same
+   `maxRetries`. But a run-level retry on the Pi path creates a fresh session:
    accumulated observations survive in `AgentState`, the provider's conversation does
-   not. Not verified against a live provider.
+   not.
 
 ## Corrections to the Skill
 
