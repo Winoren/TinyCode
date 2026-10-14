@@ -1,0 +1,24 @@
+{
+  "scenario": "08-gate-approved",
+  "terminalType": "run_completed",
+  "terminalStatus": "complete",
+  "missingMaterial": [],
+  "eventCount": 13,
+  "observationCount": 1,
+  "transcriptLength": 5,
+  "toolCalls": 1,
+  "iteration": 2,
+  "eventTypes": [
+    "decision_made",
+    "human_input_received",
+    "human_input_requested",
+    "model_requested",
+    "observation_added",
+    "run_completed",
+    "run_resumed",
+    "run_started",
+    "tool_completed",
+    "tool_started",
+    "usage_reported"
+  ]
+}

@@ -1,0 +1,11 @@
+{"type":"run_started","runId":"id-1","sequence":0,"timestamp":1700000000003}
+{"type":"model_requested","model":"fake-model","runId":"id-1","sequence":1,"timestamp":1700000000006}
+{"type":"decision_made","decision":{"kind":"call_tool","intent":{"name":"bash","arguments":{"command":"rm -rf .."}}},"runId":"id-1","sequence":2,"timestamp":1700000000007}
+{"type":"human_input_requested","question":"Run `rm -rf ..`? It recursively deletes outside the workspace: ...","runId":"id-1","sequence":3,"timestamp":1700000000008}
+{"type":"human_input_received","input":"no","runId":"id-1","sequence":4,"timestamp":1700000000010}
+{"type":"run_resumed","runId":"id-1","sequence":5,"timestamp":1700000000012}
+{"type":"observation_added","name":"bash","observation":{"name":"bash","ok":false,"error":{"code":"invalid_tool","message":"declined by the operator: recursively deletes outside the workspace: .."},"durationMs":0,"observedAt":1700000000013},"runId":"id-1","sequence":6,"timestamp":1700000000014}
+{"type":"model_requested","model":"fake-model","runId":"id-1","sequence":7,"timestamp":1700000000016}
+{"type":"decision_made","decision":{"kind":"respond","content":"Left it alone as instructed."},"runId":"id-1","sequence":8,"timestamp":1700000000017}
+{"type":"usage_reported","usage":{"toolCalls":0,"durationMs":14,"model":"fake-model"},"runId":"id-1","sequence":9,"timestamp":1700000000019}
+{"type":"run_completed","status":"partial","result":"Left it alone as instructed.","missingMaterial":["bash"],"runId":"id-1","sequence":10,"timestamp":1700000000020}

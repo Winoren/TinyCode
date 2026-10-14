@@ -37,6 +37,8 @@ import {
   type EventDraft,
   type ToolPort,
 } from "../../core/contracts.ts";
+import { createGatedToolPort, type GatePolicy } from "../../core/gate.ts";
+import type { HumanInputChannel } from "../../core/contracts.ts";
 import type { RunDriver } from "../../core/loop.ts";
 import { assistantReplyEntry } from "../../core/transcript.ts";
 import type { AnyToolDefinition } from "../../tools/types.ts";
@@ -76,6 +78,12 @@ export interface PiDriverOptions {
   /** The tools we intend to expose; also becomes the SDK allowlist. */
   tools: readonly AnyToolDefinition[];
   systemPrompt?: string;
+  /**
+   * Confirmation policy. Wired as a `ToolPort` decorator, because both execution paths
+   * funnel through `ToolPort.execute` — so this is the one place a gate holds on the
+   * SDK path, where the model emits tool calls rather than Core `ask_human` decisions.
+   */
+  gate?: GatePolicy;
   /**
    * Refuse to run if the model is offered a tool we did not define. On by default:
    * this is the guard that keeps a built-in from silently reappearing.
@@ -131,16 +139,39 @@ export function buildPiSessionOptions(options: PiDriverOptions): PiSessionPlan {
   };
 }
 
+/**
+ * The tool port the session will actually use: our registry, wrapped in the
+ * confirmation gate when a policy is configured.
+ *
+ * Exported so the wiring is testable without a live model. Left inline it could only be
+ * trusted, not checked — and "the safety gate was actually installed" is precisely the
+ * kind of claim that should not rest on trust.
+ */
+export function resolveToolPort(
+  options: Pick<PiDriverOptions, "toolPort" | "gate" | "cwd">,
+  humanInput: HumanInputChannel | undefined,
+  report: { onRequested: (question: string) => void; onAnswered: (input: unknown) => void },
+): ToolPort {
+  if (options.gate === undefined) return options.toolPort;
+
+  return createGatedToolPort(options.toolPort, {
+    policy: options.gate,
+    context: { cwd: options.cwd },
+    humanInput,
+    onRequested: report.onRequested,
+    onAnswered: report.onAnswered,
+  });
+}
+
 export function piDriver(options: PiDriverOptions): RunDriver {
   const expected = new Set(options.tools.map((tool) => tool.name));
 
   return async function* piDriver(state, ctx) {
     const startedAt = ctx.now();
-    const plan = buildPiSessionOptions(options);
-    if (plan.diagnostics.length > 0) options.onDiagnostics?.(plan.diagnostics);
-    const { session } = await createAgentSession(plan.sessionOptions);
 
     // --- callback → generator bridge -------------------------------------------
+    // Built before the session, because the confirmation gate reports its round trip
+    // through this queue and the gate is installed on the tool port.
     const queue: EventDraft[] = [];
     let wake: (() => void) | null = null;
     const signalWork = (): void => {
@@ -152,15 +183,25 @@ export function piDriver(options: PiDriverOptions): RunDriver {
       new Promise<void>((resolve) => {
         wake = resolve;
       });
-
-    let promptSettled = false;
-    let failure: unknown;
-    const scratch = createNormalizationScratch();
-
     const enqueue = (draft: EventDraft): void => {
       queue.push(draft);
       signalWork();
     };
+
+    const toolPort = resolveToolPort(options, ctx.humanInput, {
+      // Surfaced as the same events the Core loop emits for a confirmation, so a
+      // reader of the trace cannot tell which path asked.
+      onRequested: (question) => enqueue({ type: "human_input_requested", question }),
+      onAnswered: (input) => enqueue({ type: "human_input_received", input }),
+    });
+
+    const plan = buildPiSessionOptions({ ...options, toolPort });
+    if (plan.diagnostics.length > 0) options.onDiagnostics?.(plan.diagnostics);
+    const { session } = await createAgentSession(plan.sessionOptions);
+
+    let promptSettled = false;
+    let failure: unknown;
+    const scratch = createNormalizationScratch();
 
     /**
      * Stop the run when a budget is spent.

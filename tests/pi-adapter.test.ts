@@ -20,8 +20,9 @@ import { createAgentSession } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
 
 import { toolOutput, type ToolIntent, type ToolPort } from "../src/core/contracts.ts";
+import { allowAllPolicy, destructiveCommandPolicy } from "../src/core/gate.ts";
 import { buildSystemPrompt } from "../src/adapters/pi/system-prompt.ts";
-import { buildPiSessionOptions, piDriver } from "../src/adapters/pi/driver.ts";
+import { buildPiSessionOptions, piDriver, resolveToolPort } from "../src/adapters/pi/driver.ts";
 import { definePiTools } from "../src/adapters/pi/tools.ts";
 import { toParameters } from "../src/adapters/pi/schema.ts";
 import { CODING_TOOLS, READ_ONLY_TOOLS } from "../src/tools/index.ts";
@@ -228,4 +229,94 @@ describe("session tool surface (integration, no model required)", () => {
     });
     await expect(iterator.next()).rejects.toBeTruthy();
   }, 30_000);
+});
+
+describe("gate wiring on the SDK path", () => {
+  const signal = new AbortController().signal;
+
+  /**
+   * The model on the SDK path emits tool calls, never a Core `ask_human` decision — so
+   * before this wiring existed the whole confirmation capability was unreachable in
+   * production, and the CLI's confirmation channel was dead code.
+   */
+  it("leaves the registry untouched when no policy is configured", async () => {
+    const port = recordingPort();
+    const resolved = resolveToolPort({ toolPort: port, cwd: "/workspace" }, async () => "yes", {
+      onRequested: () => {},
+      onAnswered: () => {},
+    });
+
+    expect(resolved).toBe(port);
+  });
+
+  it("blocks a gated action on the SDK path when it is declined", async () => {
+    const port = recordingPort();
+    const resolved = resolveToolPort(
+      { toolPort: port, cwd: "/workspace", gate: destructiveCommandPolicy() },
+      async () => "no",
+      { onRequested: () => {}, onAnswered: () => {} },
+    );
+
+    await expect(
+      resolved.execute({ name: "bash", arguments: { command: "rm -rf .." } }, signal),
+    ).rejects.toMatchObject({ code: "invalid_tool" });
+    // Our own tool never ran, so the workspace boundary was never even approached.
+    expect(port.seen).toHaveLength(0);
+  });
+
+  it("reports the round trip so the driver can emit the same events as the Core loop", async () => {
+    const requested: string[] = [];
+    const answered: unknown[] = [];
+    const resolved = resolveToolPort(
+      { toolPort: recordingPort(), cwd: "/workspace", gate: destructiveCommandPolicy() },
+      async () => "yes",
+      {
+        onRequested: (question) => requested.push(question),
+        onAnswered: (input) => answered.push(input),
+      },
+    );
+
+    await resolved.execute({ name: "bash", arguments: { command: "git push --force" } }, signal);
+
+    expect(requested).toHaveLength(1);
+    expect(requested[0]).toContain("git push --force");
+    expect(answered).toEqual(["yes"]);
+  });
+
+  it("passes an ungated action straight through to our registry", async () => {
+    const port = recordingPort();
+    const resolved = resolveToolPort(
+      { toolPort: port, cwd: "/workspace", gate: destructiveCommandPolicy() },
+      async () => "no",
+      { onRequested: () => {}, onAnswered: () => {} },
+    );
+
+    await resolved.execute({ name: "read", arguments: { path: "a.ts" } }, signal);
+    expect(port.seen).toEqual([{ name: "read", arguments: { path: "a.ts" } }]);
+  });
+
+  it("fails closed when a gated action is reached with no way to ask", async () => {
+    const resolved = resolveToolPort(
+      { toolPort: recordingPort(), cwd: "/workspace", gate: destructiveCommandPolicy() },
+      undefined,
+      { onRequested: () => {}, onAnswered: () => {} },
+    );
+
+    await expect(
+      resolved.execute({ name: "bash", arguments: { command: "rm -rf .." } }, signal),
+    ).rejects.toMatchObject({ code: "runtime_error" });
+  });
+
+  it("honours an explicit allow-all policy", async () => {
+    const port = recordingPort();
+    const resolved = resolveToolPort(
+      { toolPort: port, cwd: "/workspace", gate: allowAllPolicy() },
+      undefined,
+      { onRequested: () => {}, onAnswered: () => {} },
+    );
+
+    // Even with no channel, an allow-all policy permits the call.
+    await resolved.execute({ name: "bash", arguments: { command: "rm -rf .." } }, signal);
+    expect(port.seen).toHaveLength(1);
+  });
 });

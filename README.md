@@ -89,13 +89,13 @@ npm run golden      # regenerate the golden transcript corpus (deliberate, not C
 
 ### Golden transcripts
 
-[`fixtures/golden/`](fixtures/golden) holds seven complete event logs from real runs,
+[`fixtures/golden/`](fixtures/golden) holds nine complete event logs from real runs,
 each paired with a summary of the state it replays to. They exist so that a change in
 the event vocabulary, in replay semantics, or in the SDK adapter cannot land silently:
 if semantics move, [`tests/golden.test.ts`](tests/golden.test.ts) stops matching and the
 corpus must be regenerated on purpose. The set covers all three terminal shapes —
-complete, partial with missing material, and failed — plus a retry that recovers and a
-human confirmation round trip.
+complete, partial with missing material, and failed — plus a recovering retry, an
+approved destructive action, and a declined one that ends partial.
 
 Determinism is injected, not hoped for — the generator supplies a fixed clock and id
 source, so regenerating an unchanged build produces no diff.
@@ -117,6 +117,7 @@ source, so regenerating an unchanged build produces no diff.
 | `run_completed` distinguishes `complete` from `partial` | `cli — end-to-end vertical slice` |
 | Usage is reported, or explicitly unknown — never a fabricated zero | `event rendering` |
 | Tools cannot escape the workspace, including via symlinks | `workspace boundary` |
+| A gated action cannot run unapproved, and a refusal is visible, not silent | `gate.test.ts` — policy boundaries and `core loop — the gate decides` |
 | A non-zero exit code is information, not a tool failure | `bash` |
 
 The load-bearing end-to-end test runs `bootstrap()` — the same assembly the CLI uses —
@@ -141,8 +142,14 @@ Closed unless proven otherwise:
 - **credentials are redacted from every event** before it is handed to a consumer or
   written to disk — exact-value matching of the keys this process actually holds, not
   pattern matching, so a tool result quoting a key from your own file is not mangled;
+- **destructive shell commands are gated by default.** A recursive delete that leaves
+  the workspace, a force-push, a hard reset, `sudo`, piping remote content into a shell,
+  publishing a package. Stated plainly: this is a **safety net against accidents, not a
+  security boundary** — text-level inspection is bypassable, and the real containment is
+  the path gate plus OS process isolation. Its job is the routine disaster: an agent
+  that decides `rm -rf ..` is how you clean a build directory;
 - `ask_human` without a channel **fails**; when stdin is not a terminal, confirmations
-  are unavailable rather than assumed.
+  are unavailable rather than assumed, so a gated command fails the run.
 
 ## Known limitations
 

@@ -173,6 +173,13 @@ export function usageText(): string {
     "      --store-dir <dir>         Where run logs are written (default: <cwd>/.tinycode)",
     "  -h, --help                    Show this help",
     "",
+    "Confirmations:",
+    "  Destructive shell commands are gated: a recursive delete that leaves the",
+    "  workspace, force-push, hard reset, sudo, piping remote content into a shell,",
+    "  publishing a package, and similar. This is a safety net against accidents,",
+    "  not a security boundary. With no terminal and no --yes, a gated command fails",
+    "  the run rather than being assumed.",
+    "",
     "Environment:",
     "  DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, ... provide provider auth.",
   ].join("\n");

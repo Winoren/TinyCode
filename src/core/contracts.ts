@@ -253,6 +253,14 @@ export interface ModelPort {
 }
 
 /**
+ * Ask a person something and resolve with their answer.
+ *
+ * Lives here rather than in the loop because both the loop and the confirmation gate
+ * need it, and a gate importing the loop would be a cycle.
+ */
+export type HumanInputChannel = (question: string, signal: AbortSignal) => Promise<unknown>;
+
+/**
  * The seam the Core acts through. Implementations must reject in-flight work
  * when `signal` fires, and must refuse names outside the allowlist.
  */

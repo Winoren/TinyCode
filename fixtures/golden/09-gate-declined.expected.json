@@ -1,0 +1,24 @@
+{
+  "scenario": "09-gate-declined",
+  "terminalType": "run_completed",
+  "terminalStatus": "partial",
+  "missingMaterial": [
+    "bash"
+  ],
+  "eventCount": 11,
+  "observationCount": 1,
+  "transcriptLength": 5,
+  "toolCalls": 0,
+  "iteration": 2,
+  "eventTypes": [
+    "decision_made",
+    "human_input_received",
+    "human_input_requested",
+    "model_requested",
+    "observation_added",
+    "run_completed",
+    "run_resumed",
+    "run_started",
+    "usage_reported"
+  ]
+}

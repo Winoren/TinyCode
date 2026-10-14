@@ -16,6 +16,7 @@ import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import { piDriver } from "./adapters/pi/driver.ts";
 import { DEFAULT_BUDGET, type RunBudget, type ToolPort } from "./core/contracts.ts";
 import type { HumanInputChannel, RunDriver } from "./core/loop.ts";
+import { destructiveCommandPolicy, type GatePolicy } from "./core/gate.ts";
 import { createRedactor } from "./core/redact.ts";
 import { resolveModel } from "./model/registry.ts";
 import {
@@ -53,6 +54,11 @@ export interface BootstrapOptions {
   runLog?: RunLog;
   sessionStore?: SessionStore;
   /**
+   * Confirmation policy. Defaults to gating destructive shell commands; pass
+   * `allowAllPolicy()` to disable gating, or a custom policy to change what counts.
+   */
+  gate?: GatePolicy;
+  /**
    * Extra credential values to redact from every event. Provider keys found in the
    * environment are added automatically; this is for callers that hold a secret the
    * resolver cannot see.
@@ -78,6 +84,8 @@ export async function bootstrap(options: BootstrapOptions): Promise<Bootstrapped
   const budget: RunBudget = { ...DEFAULT_BUDGET, ...options.budget };
   const newId = defaultIdGenerator();
 
+  const gate: GatePolicy = options.gate ?? destructiveCommandPolicy();
+
   const diagnostics: string[] = [];
   const collect = (messages: readonly string[]): void => {
     diagnostics.push(...messages);
@@ -102,6 +110,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<Bootstrapped
         modelRuntime: resolution.modelRuntime,
         toolPort,
         tools,
+        gate: gate,
         maxRetries: budget.maxRetries,
         onDiagnostics: collect,
       });

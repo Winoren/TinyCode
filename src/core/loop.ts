@@ -19,6 +19,7 @@ import {
   type AgentEvent,
   type AgentState,
   type EventDraft,
+  type HumanInputChannel,
   type ModelPort,
   type Observation,
   type RunBudget,
@@ -26,6 +27,7 @@ import {
 } from "./contracts.ts";
 import { assertWithinBudget } from "./budget.ts";
 import { normalizeUnknownError } from "./errors.ts";
+import { ALLOWED, confirmQuestion, isApproval, type GatePolicy } from "./gate.ts";
 import {
   assistantIntentEntry,
   assistantReplyEntry,
@@ -34,7 +36,7 @@ import {
 } from "./transcript.ts";
 
 /** Ask a person something and resolve with their answer. Injected, never invented. */
-export type HumanInputChannel = (question: string, signal: AbortSignal) => Promise<unknown>;
+export type { HumanInputChannel } from "./contracts.ts";
 
 export interface DriverContext {
   budget: RunBudget;
@@ -54,6 +56,13 @@ export type RunDriver = (
 export interface CoreLoopDeps {
   model: ModelPort;
   tools: ToolPort;
+  /**
+   * Decides which actions need a person's approval first.
+   *
+   * Absent means nothing is gated. The policy is a Core-level concept because
+   * "this action needs a human" is Core semantics, not an SDK or product detail.
+   */
+  gate?: GatePolicy;
 }
 
 /**
@@ -99,17 +108,7 @@ export function coreLoopDriver(deps: CoreLoopDeps): RunDriver {
       }
 
       if (decision.kind === "ask_human") {
-        if (ctx.humanInput === undefined) {
-          throw new AgentError(
-            "runtime_error",
-            "ask_human without a human input channel: refusing to proceed silently",
-          );
-        }
-        yield { type: "human_input_requested", question: decision.question };
-        const input = await ctx.humanInput(decision.question, ctx.signal);
-        yield { type: "human_input_received", input };
-        state.iteration += 1;
-        state.transcript.push(humanReplyEntry(input));
+        yield* requestHumanInput(decision.question, state, ctx);
         continue;
       }
 
@@ -131,6 +130,29 @@ export function coreLoopDriver(deps: CoreLoopDeps): RunDriver {
         });
         yield { type: "observation_added", name: intent.name, observation };
         continue;
+      }
+
+      // The gate sits after the allowlist and before execution: an action the policy
+      // flags must be approved before it can have any effect.
+      const verdict = deps.gate?.(intent, { cwd: state.task.cwd }) ?? ALLOWED;
+      if (!verdict.allow) {
+        const answer = yield* requestHumanInput(confirmQuestion(intent, verdict), state, ctx);
+        if (!isApproval(answer)) {
+          // A declined action is an absent capability, not a fault: it becomes missing
+          // material and the run continues, exactly like a refused tool.
+          missing.add(intent.name);
+          const observation = recordObservation(state, intent.name, {
+            ok: false,
+            error: {
+              code: "invalid_tool",
+              message: `declined by the operator: ${verdict.reason}`,
+            },
+            durationMs: 0,
+            observedAt: ctx.now(),
+          });
+          yield { type: "observation_added", name: intent.name, observation };
+          continue;
+        }
       }
 
       const toolCallId = ctx.newToolCallId();
@@ -178,6 +200,36 @@ export function coreLoopDriver(deps: CoreLoopDeps): RunDriver {
       }
     }
   };
+}
+
+/**
+ * Ask a person, emit the round trip, and record the answer in the transcript.
+ *
+ * Shared by the model's own `ask_human` decision and by the confirmation gate, so both
+ * produce identical events and identical replayable state — the alternative was two
+ * subtly different human-input paths.
+ *
+ * Failing closed matters more than convenience here: with no channel there is nobody to
+ * ask, so the run fails rather than proceeding on an assumption.
+ */
+async function* requestHumanInput(
+  question: string,
+  state: AgentState,
+  ctx: DriverContext,
+): AsyncGenerator<EventDraft, unknown, void> {
+  if (ctx.humanInput === undefined) {
+    throw new AgentError(
+      "runtime_error",
+      `no human input channel is available, so this cannot be confirmed: ${question}`,
+    );
+  }
+
+  yield { type: "human_input_requested", question };
+  const input = await ctx.humanInput(question, ctx.signal);
+  yield { type: "human_input_received", input };
+  state.iteration += 1;
+  state.transcript.push(humanReplyEntry(input));
+  return input;
 }
 
 /**

@@ -28,6 +28,14 @@
     {
       "name": "07-retry-then-succeed",
       "description": "run_completed / 3 events"
+    },
+    {
+      "name": "08-gate-approved",
+      "description": "run_completed / 13 events"
+    },
+    {
+      "name": "09-gate-declined",
+      "description": "run_completed / 11 events"
     }
   ]
 }

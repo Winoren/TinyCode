@@ -1,0 +1,13 @@
+{"type":"run_started","runId":"id-1","sequence":0,"timestamp":1700000000003}
+{"type":"model_requested","model":"fake-model","runId":"id-1","sequence":1,"timestamp":1700000000006}
+{"type":"decision_made","decision":{"kind":"call_tool","intent":{"name":"bash","arguments":{"command":"git push --force origin main"}}},"runId":"id-1","sequence":2,"timestamp":1700000000007}
+{"type":"human_input_requested","question":"Run `git push --force origin main`? It a force-push rewrites history other people may already have.","runId":"id-1","sequence":3,"timestamp":1700000000008}
+{"type":"human_input_received","input":"yes","runId":"id-1","sequence":4,"timestamp":1700000000010}
+{"type":"run_resumed","runId":"id-1","sequence":5,"timestamp":1700000000012}
+{"type":"tool_started","toolCallId":"id-2","toolName":"bash","args":{"command":"git push --force origin main"},"runId":"id-1","sequence":6,"timestamp":1700000000014}
+{"type":"tool_completed","toolCallId":"id-2","toolName":"bash","status":"success","result":{"exitCode":0},"durationMs":2,"runId":"id-1","sequence":7,"timestamp":1700000000016}
+{"type":"observation_added","name":"bash","observation":{"name":"bash","ok":true,"result":{"exitCode":0},"durationMs":2,"observedAt":1700000000017},"runId":"id-1","sequence":8,"timestamp":1700000000018}
+{"type":"model_requested","model":"fake-model","runId":"id-1","sequence":9,"timestamp":1700000000020}
+{"type":"decision_made","decision":{"kind":"respond","content":"Force-pushed after approval."},"runId":"id-1","sequence":10,"timestamp":1700000000021}
+{"type":"usage_reported","usage":{"toolCalls":1,"durationMs":18,"model":"fake-model"},"runId":"id-1","sequence":11,"timestamp":1700000000023}
+{"type":"run_completed","status":"complete","result":"Force-pushed after approval.","runId":"id-1","sequence":12,"timestamp":1700000000024}

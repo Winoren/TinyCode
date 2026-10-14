@@ -24,6 +24,7 @@ import {
   type Decision,
   type Task,
 } from "../src/core/contracts.ts";
+import { destructiveCommandPolicy } from "../src/core/gate.ts";
 import { coreLoopDriver, type RunDriver } from "../src/core/loop.ts";
 import { replayAgentState } from "../src/core/replay.ts";
 import { AgentRuntime } from "../src/runtime/runtime.ts";
@@ -122,6 +123,37 @@ const SCENARIOS: Scenario[] = [
         tools: fakeTools({}),
       }),
     humanInput: async () => "no, do not touch it",
+  },
+  {
+    name: "08-gate-approved",
+    task: TASK,
+    driver: () =>
+      coreLoopDriver({
+        model: scriptedModel([
+          {
+            kind: "call_tool",
+            intent: { name: "bash", arguments: { command: "git push --force origin main" } },
+          },
+          { kind: "respond", content: "Force-pushed after approval." },
+        ]),
+        tools: fakeTools({ bash: () => ({ exitCode: 0 }) }),
+        gate: destructiveCommandPolicy(),
+      }),
+    humanInput: async () => "yes",
+  },
+  {
+    name: "09-gate-declined",
+    task: TASK,
+    driver: () =>
+      coreLoopDriver({
+        model: scriptedModel([
+          { kind: "call_tool", intent: { name: "bash", arguments: { command: "rm -rf .." } } },
+          { kind: "respond", content: "Left it alone as instructed." },
+        ]),
+        tools: fakeTools({ bash: () => "this must never run" }),
+        gate: destructiveCommandPolicy(),
+      }),
+    humanInput: async () => "no",
   },
   {
     name: "07-retry-then-succeed",
