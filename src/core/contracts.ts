@@ -49,6 +49,37 @@ export interface Observation {
   observedAt: number;
 }
 
+/**
+ * A tool result has two audiences and they need different shapes.
+ *
+ * The **model** needs compact text it can reason over. The **auditor** needs the
+ * structured facts — exit codes, byte counts, which file changed. Collapsing both
+ * into one `unknown` means either the model reads raw JSON or the trace loses the
+ * detail; this type keeps them separable without letting a tool return two
+ * different things.
+ */
+export interface ToolOutput {
+  /** Exactly what the model reads. */
+  content: string;
+  /** Structured evidence for the trace and the UI. Never sent to the model. */
+  details?: unknown;
+}
+
+export function toolOutput(content: string, details?: unknown): ToolOutput {
+  return details === undefined ? { content } : { content, details };
+}
+
+/**
+ * Structural check with a whitelist of keys, so an arbitrary object that happens
+ * to have a `content` field is not mistaken for a tool result.
+ */
+export function isToolOutput(value: unknown): value is ToolOutput {
+  if (typeof value !== "object" || value === null) return false;
+  if (!("content" in value)) return false;
+  if (typeof (value as { content: unknown }).content !== "string") return false;
+  return Object.keys(value).every((key) => key === "content" || key === "details");
+}
+
 /** The conversation the model sees. Separate from observations on purpose. */
 export type TranscriptEntry =
   | { role: "user"; text: string }

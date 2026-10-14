@@ -7,22 +7,26 @@
  * something each tool remembers to do.
  */
 
+import { isToolOutput } from "./contracts.ts";
+
 /** Hard ceiling for one transcript entry, in characters. */
 export const MAX_TRANSCRIPT_CHARS = 8_000;
 
 /** Render an arbitrary tool result as transcript text. Never throws. */
 export function toTranscriptText(value: unknown): string {
-  let text: string;
-  if (typeof value === "string") {
-    text = value;
-  } else {
-    try {
-      text = JSON.stringify(value, null, 2) ?? String(value);
-    } catch {
-      text = String(value);
-    }
+  return truncate(render(value), MAX_TRANSCRIPT_CHARS);
+}
+
+function render(value: unknown): string {
+  // A tool result carries model-facing text plus audit detail; the model gets only
+  // the text. Any other value is rendered structurally.
+  if (isToolOutput(value)) return value.content;
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2) ?? String(value);
+  } catch {
+    return String(value);
   }
-  return truncate(text, MAX_TRANSCRIPT_CHARS);
 }
 
 export function truncate(text: string, limit: number): string {
