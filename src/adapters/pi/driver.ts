@@ -376,6 +376,8 @@ function assertToolSurface(active: readonly string[], expected: ReadonlySet<stri
  */
 export class ToolStartGate {
   private held: EventDraft[] = [];
+  /** Tool calls whose start was withheld and never released. */
+  private readonly abandoned = new Set<string>();
 
   constructor(
     private readonly policy: GatePolicy | undefined,
@@ -404,7 +406,31 @@ export class ToolStartGate {
   settle(approved: boolean): EventDraft[] {
     const released = this.held;
     this.held = [];
-    return approved ? released : [];
+
+    if (approved) return released;
+
+    for (const draft of released) {
+      if (draft.type === "tool_started") this.abandoned.add(draft.toolCallId);
+    }
+    return [];
+  }
+
+  /**
+   * Whether this draft reports the completion of a tool that never started.
+   *
+   * The SDK still calls our `execute` — the gate refuses from inside it — so it reports a
+   * failed `tool_execution_end`. Forwarding that as `tool_completed` would tell an auditor
+   * that a command ran and failed, when nothing ran at all. The Core loop refuses before
+   * either event, so suppressing this is also what makes the two paths agree.
+   *
+   * The observation is still forwarded: the refusal must stay visible.
+   */
+  isAbandonedCompletion(draft: EventDraft): boolean {
+    return draft.type === "tool_completed" && this.abandoned.has(draft.toolCallId);
+  }
+
+  get abandonedCount(): number {
+    return this.abandoned.size;
   }
 
   get pending(): number {
@@ -426,6 +452,7 @@ export function forwardNormalized(
 ): void {
   for (const draft of drafts) {
     if (toolStartGate.withholdIfGated(draft)) continue;
+    if (toolStartGate.isAbandonedCompletion(draft)) continue;
     emit(draft);
   }
 }

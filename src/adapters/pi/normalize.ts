@@ -221,13 +221,43 @@ export function extractToolOutput(result: unknown): ToolOutput {
 }
 
 export function describeToolError(result: unknown): RunError {
-  const message =
-    typeof result === "string"
-      ? result
-      : result !== null && typeof result === "object" && "message" in result
-        ? String((result as { message: unknown }).message)
-        : JSON.stringify(result ?? "tool failed");
+  const message = errorTextOf(result);
   return { code: normalizeUnknownError(new Error(message)).code, message };
+}
+
+/**
+ * Pull the message out of whatever the SDK handed back for a failed tool.
+ *
+ * The SDK wraps a thrown error with the *same* `AgentToolResult` envelope it uses for
+ * success — `{ content: [{ type: "text", text: message }], details: {} }` — and drops
+ * our error code. Looking for a `message` field (which this shape never has) meant every
+ * tool error on the SDK path was reported as a JSON blob classified `runtime_error`,
+ * losing both the message and the taxonomy. Found by the live test, which is the only
+ * place a real envelope ever appeared.
+ */
+function errorTextOf(result: unknown): string {
+  if (typeof result === "string") return result;
+
+  if (result !== null && typeof result === "object") {
+    const candidate = result as { message?: unknown; content?: unknown };
+
+    if (typeof candidate.message === "string" && candidate.message !== "") {
+      return candidate.message;
+    }
+
+    if (Array.isArray(candidate.content)) {
+      const text = candidate.content
+        .map((part) =>
+          part !== null && typeof part === "object" && (part as { type?: string }).type === "text"
+            ? String((part as { text?: unknown }).text ?? "")
+            : "",
+        )
+        .join("");
+      if (text !== "") return text;
+    }
+  }
+
+  return JSON.stringify(result ?? "tool failed");
 }
 
 export function toUsageReport(

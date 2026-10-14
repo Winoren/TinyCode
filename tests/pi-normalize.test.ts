@@ -326,6 +326,31 @@ describe("payload extraction", () => {
     expect(describeToolError(undefined).message.length).toBeGreaterThan(0);
   });
 
+  it("reads the SDK's error envelope, which has no message field", () => {
+    // Verified against pi-agent-core's own `createErrorToolResult`: a thrown tool error
+    // is wrapped in the *same* envelope as a success. A `message` lookup found nothing
+    // and JSON-stringified the envelope, so every tool error on the SDK path lost both
+    // its message and its taxonomy.
+    const envelope = {
+      content: [{ type: "text", text: "unknown tool: deploy" }],
+      details: {},
+    };
+
+    const described = describeToolError(envelope);
+
+    expect(described.message).toBe("unknown tool: deploy");
+    expect(described.code).toBe("invalid_tool");
+  });
+
+  it("classifies our own gate refusal as a refused capability", () => {
+    const envelope = {
+      content: [{ type: "text", text: "declined by the operator: a force-push rewrites history" }],
+      details: {},
+    };
+
+    expect(describeToolError(envelope).code).toBe("invalid_tool");
+  });
+
   it("maps the real SDK Usage field names, not the Skill's documented ones", () => {
     // The Skill's §2.4 lists inputTokens/cacheReadInputTokens, which is
     // agent-runner's normalized shape. Using those names would silently yield

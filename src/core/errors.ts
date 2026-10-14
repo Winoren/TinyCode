@@ -44,7 +44,7 @@ const PATTERN_RULES: readonly PatternRule[] = [
   {
     code: "invalid_tool",
     pattern:
-      /unknown tool|not in allowlist|invalid (tool )?(arguments|parameters)|schema validation|zod/i,
+      /unknown tool|not in allowlist|declined by the operator|invalid (tool )?(arguments|parameters)|schema validation|zod/i,
   },
 ];
 
