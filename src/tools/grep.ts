@@ -31,7 +31,7 @@ import { AgentError, toolOutput } from "../core/contracts.ts";
 import { looksBinary } from "./binary.ts";
 import { resolveWithinWorkspace } from "./paths.ts";
 import type { ToolDefinition } from "./types.ts";
-import { walkFiles } from "./walk.ts";
+import { walkFiles, type WalkStats } from "./walk.ts";
 
 const GrepInput = z.object({
   pattern: z.string().min(1).describe("JavaScript regular expression to search for"),
@@ -131,7 +131,9 @@ export const grepTool: ToolDefinition<GrepInput> = {
       batchBytes = 0;
     };
 
-    for await (const relative of walkFiles({ root, signal: ctx.signal })) {
+    const walkStats: WalkStats = { filesYielded: 0, stoppedEarly: false };
+
+    for await (const relative of walkFiles({ root, signal: ctx.signal, stats: walkStats })) {
       if (matches.length >= limit) {
         truncated = true;
         break;
@@ -150,14 +152,20 @@ export const grepTool: ToolDefinition<GrepInput> = {
 
     const body =
       matches.length === 0
-        ? `No matches for /${input.pattern}/`
-        : matches.join("\n") + (truncated ? `\n… [stopped at ${limit} matches]` : "");
+        ? emptySearchMessage(input.pattern, walkStats)
+        : matches.join("\n") +
+          (truncated ? `\n… [stopped at ${limit} matches]` : "") +
+          (walkStats.stoppedEarly
+            ? `\n… [search capped at ${walkStats.filesYielded} files; the rest were not searched]`
+            : "");
 
     return toolOutput(body, {
       pattern: input.pattern,
       matchCount: matches.length,
       filesScanned,
+      filesWalked: walkStats.filesYielded,
       truncated,
+      walkStoppedEarly: walkStats.stoppedEarly,
     });
   },
 };
@@ -254,4 +262,22 @@ async function readTextOrUndefined(absolute: string): Promise<string | undefined
   } catch {
     return undefined;
   }
+}
+
+/**
+ * What to say when nothing matched.
+ *
+ * A negative result is only useful if it is honest about its scope. If the walk hit its
+ * file cap, "no matches" would be a partial answer stated as a definitive one — so it
+ * says which it is and how to get the rest.
+ */
+export function emptySearchMessage(pattern: string, stats: WalkStats): string {
+  if (stats.stoppedEarly) {
+    return (
+      `No matches for /${pattern}/ in the first ${stats.filesYielded} files searched. ` +
+      "The walk was capped before the tree was exhausted, so this is NOT a complete " +
+      "answer — narrow the path to search the rest."
+    );
+  }
+  return `No matches for /${pattern}/`;
 }

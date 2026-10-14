@@ -13,7 +13,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { bashTool } from "../src/tools/bash.ts";
 import { editTool } from "../src/tools/edit.ts";
-import { REGEX_TOTAL_BUDGET_MS, grepTool } from "../src/tools/grep.ts";
+import { REGEX_TOTAL_BUDGET_MS, emptySearchMessage, grepTool } from "../src/tools/grep.ts";
+import { walkFiles } from "../src/tools/walk.ts";
 import { lsTool } from "../src/tools/ls.ts";
 import { resolveWithinWorkspace } from "../src/tools/paths.ts";
 import { MAX_IN_MEMORY_BYTES, readTool } from "../src/tools/read.ts";
@@ -399,6 +400,56 @@ describe("grep", () => {
     await expect(run(grepTool, { pattern: "([unclosed" }, cwd)).rejects.toMatchObject({
       code: "invalid_tool",
     });
+  });
+});
+
+describe("walk cap", () => {
+  it("reports that it stopped early instead of ending silently", async () => {
+    const cwd = await makeWorkspace();
+    for (let index = 0; index < 12; index += 1) {
+      await fs.writeFile(path.join(cwd, `f${index}.txt`), "x", "utf8");
+    }
+
+    const stats = { filesYielded: 0, stoppedEarly: false };
+    const seen: string[] = [];
+    for await (const relative of walkFiles({ root: cwd, maxEntries: 5, stats })) {
+      seen.push(relative);
+    }
+
+    // Silently returning at the cap makes a partial search look like a complete one,
+    // and a "no matches" answer would then be a lie.
+    expect(stats.stoppedEarly, "hitting the cap must be observable").toBe(true);
+    expect(stats.filesYielded).toBe(5);
+    expect(seen).toHaveLength(5);
+  });
+
+  it("leaves the flag clear when the tree was exhausted", async () => {
+    const cwd = await makeWorkspace();
+    await fs.writeFile(path.join(cwd, "a.txt"), "x", "utf8");
+
+    const stats = { filesYielded: 0, stoppedEarly: false };
+    for await (const _relative of walkFiles({ root: cwd, stats })) {
+      // drain
+    }
+
+    expect(stats.stoppedEarly).toBe(false);
+    expect(stats.filesYielded).toBe(1);
+  });
+});
+
+describe("an honest negative result", () => {
+  it("does not state a capped search as a definitive answer", () => {
+    const capped = emptySearchMessage("needle", { filesYielded: 20_000, stoppedEarly: true });
+
+    expect(capped).toContain("NOT a complete answer");
+    expect(capped).toContain("20000");
+  });
+
+  it("states a complete search plainly", () => {
+    const complete = emptySearchMessage("needle", { filesYielded: 12, stoppedEarly: false });
+
+    expect(complete).toBe("No matches for /needle/");
+    expect(complete).not.toContain("NOT a complete");
   });
 });
 

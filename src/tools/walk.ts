@@ -29,12 +29,26 @@ export const DEFAULT_IGNORED_DIRECTORIES: ReadonlySet<string> = new Set([
   ".turbo",
 ]);
 
+export interface WalkStats {
+  /** Files actually yielded. */
+  filesYielded: number;
+  /**
+   * True when the entry cap stopped the walk before the tree was exhausted.
+   *
+   * Without this a capped walk is indistinguishable from a complete one, and a caller
+   * reporting "no matches" would be stating a partial result as a definitive one.
+   */
+  stoppedEarly: boolean;
+}
+
 export interface WalkOptions {
   /** Absolute workspace root. */
   root: string;
   ignored?: ReadonlySet<string>;
   maxEntries?: number;
   signal?: AbortSignal;
+  /** Optional observer, so a caller can tell a complete walk from a capped one. */
+  stats?: WalkStats;
 }
 
 /** Yield file paths relative to `root`, in a stable sorted order. */
@@ -75,8 +89,14 @@ export async function* walkFiles(options: WalkOptions): AsyncGenerator<string> {
       // Only regular files: symlinks and devices are skipped by design.
       if (!entry.isFile()) continue;
 
+      // Check before yielding, so exactly `maxEntries` files come out and hitting the
+      // cap is recorded rather than being reported as the end of the tree.
+      if (yielded >= maxEntries) {
+        if (options.stats !== undefined) options.stats.stoppedEarly = true;
+        return;
+      }
       yielded += 1;
-      if (yielded > maxEntries) return;
+      if (options.stats !== undefined) options.stats.filesYielded = yielded;
       yield relative;
     }
   }
