@@ -95,6 +95,29 @@ describe("cli end to end against a custom endpoint", () => {
     expect(stub.requestBodies[1]).toContain("export const answer = 42");
   }, 30_000);
 
+  it("says tokens are unknown rather than printing zero", async () => {
+    const cwd = await tempDir();
+    const storeDir = await tempDir();
+
+    // The endpoint reports no usage, which the SDK turns into zeros.
+    const stub = await startStubProvider([{ text: "No counts here." }]);
+    providers.push(stub);
+
+    const result = await runMain([
+      "--cwd", cwd,
+      "--store-dir", storeDir,
+      "--base-url", `http://127.0.0.1:${stub.port}/v1`,
+      "--model", "stub-model",
+      "--tools", "read",
+      "hi",
+    ]);
+
+    expect(result.code).toBe(0);
+    // The user-visible symptom of the fabricated-zero bug was exactly this line.
+    expect(result.err).toContain("tokens unknown");
+    expect(result.err).not.toContain("in 0");
+  }, 30_000);
+
   it("exits non-zero when the endpoint refuses the request", async () => {
     const cwd = await tempDir();
     const storeDir = await tempDir();
