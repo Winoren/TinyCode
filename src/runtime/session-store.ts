@@ -47,6 +47,9 @@ export class InMemorySessionStore implements SessionStore {
 
 export class JsonSessionStore implements SessionStore {
   private readonly directory: string;
+  /** Per-session write chains, so two saves of one session cannot interleave. */
+  private readonly chains = new Map<string, Promise<unknown>>();
+  private temporaryCounter = 0;
 
   constructor(
     directory: string,
@@ -83,12 +86,43 @@ export class JsonSessionStore implements SessionStore {
   }
 
   async saveSession(session: Session): Promise<void> {
-    // Write-then-rename: a crash mid-write leaves the previous good file intact
-    // rather than a truncated one.
-    const target = this.sessionFile(session.id);
-    const temporary = `${target}.tmp`;
-    await fs.writeFile(temporary, JSON.stringify(session, null, 2), "utf8");
-    await fs.rename(temporary, target);
+    // Snapshot synchronously: `run()` mutates `session.runs` while writes are in
+    // flight, so serialising the live object would persist a later state than the one
+    // being recorded.
+    const snapshot: Session = { ...session, runs: [...session.runs] };
+
+    await this.serialize(snapshot.id, async () => {
+      // Write-then-rename: a crash mid-write leaves the previous good file intact
+      // rather than a truncated one.
+      const target = this.sessionFile(snapshot.id);
+      // The temporary name must be unique per write. A fixed `<target>.tmp` meant two
+      // concurrent saves of one session wrote the same path, and whichever renamed
+      // second failed with ENOENT — which is exactly what happened whenever two runs
+      // started in one session, since each saves the session at start and at end.
+      this.temporaryCounter += 1;
+      const temporary = `${target}.${process.pid}.${this.temporaryCounter}.tmp`;
+      try {
+        await fs.writeFile(temporary, JSON.stringify(snapshot, null, 2), "utf8");
+        await fs.rename(temporary, target);
+      } catch (error) {
+        await fs.rm(temporary, { force: true }).catch(() => {});
+        throw error;
+      }
+    });
+  }
+
+  /** Run writes for one session in order, so they cannot interleave or race. */
+  private serialize<T>(key: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.chains.get(key) ?? Promise.resolve();
+    const next = previous.then(work, work);
+    this.chains.set(
+      key,
+      next.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return next;
   }
 
   async listSessions(): Promise<Session[]> {

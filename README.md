@@ -105,6 +105,7 @@ source, so regenerating an unchanged build produces no diff.
 | Invariant | Where it is proven |
 |---|---|
 | Two sessions share no state | `runtime — session isolation` |
+| Two concurrent runs in one session do not corrupt each other or the store | `runtime — concurrency` |
 | Every run has exactly one terminal event | `runtime — lifecycle guarantees` |
 | A tool failure is visible and does not corrupt other state | `core loop — refusal and isolation` |
 | Cancellation stops work, is never retried, and is persisted as `cancelled` | `runtime — termination is never fabricated` |

@@ -24,6 +24,7 @@ import { fakeTools, scriptedModel } from "../src/adapters/fake/index.ts";
 import { AgentRuntime, backoffDelayMs, createRuntime } from "../src/runtime/runtime.ts";
 import { InMemoryRunLog, JsonlRunLog, parseEventLog } from "../src/runtime/run-log.ts";
 import { InMemorySessionStore, JsonSessionStore } from "../src/runtime/session-store.ts";
+import { functionalModel } from "../src/adapters/fake/index.ts";
 
 const TASK: Task = { id: "task-1", input: "do the thing", cwd: "/tmp/ws" };
 
@@ -527,4 +528,70 @@ describe("runtime — waiting for a human is a durable state", () => {
     expect(answered).toBeGreaterThan(-1);
     expect(events[answered + 1]?.type).toBe("run_resumed");
   });
+});
+
+describe("runtime — concurrency", () => {
+  it("survives concurrent saves of the same session", async () => {
+    const directory = await tempDir();
+    const store = await JsonSessionStore.open(directory, idGenerator());
+    const session = await store.createSession();
+
+    // Write-then-rename is the right shape, but a *fixed* temporary name means two
+    // concurrent saves of one session can interleave or race the rename.
+    await Promise.all(
+      Array.from({ length: 25 }, (_unused, index) =>
+        store.saveSession({
+          ...session,
+          runs: [
+            {
+              runId: `r${index}`,
+              sessionId: session.id,
+              task: TASK,
+              status: "completed",
+              startedAt: index,
+              updatedAt: index,
+            },
+          ],
+        }),
+      ),
+    );
+
+    const loaded = await store.loadSession(session.id);
+    expect(loaded, "the session file must still be readable JSON").toBeDefined();
+    expect(Array.isArray(loaded?.runs)).toBe(true);
+  }, 20_000);
+
+  it("keeps two concurrent runs in one session separate and both persisted", async () => {
+    const directory = await tempDir();
+    const runLog = await JsonlRunLog.open(directory);
+    const sessionStore = await JsonSessionStore.open(directory, idGenerator());
+
+    const runtime = await createRuntime({
+      cwd: "/tmp/ws",
+      // Always answers, so two concurrent runs do not exhaust a script.
+      driver: coreLoopDriver({
+        model: functionalModel(() => ({ kind: "respond", content: "done" })),
+        tools: fakeTools({}),
+      }),
+      runLog,
+      sessionStore,
+      newId: idGenerator(),
+      sleep: async () => true,
+    });
+
+    const [first, second] = await Promise.all([collect(runtime.run(TASK)), collect(runtime.run(TASK))]);
+
+    expect(terminals(first)[0]?.type).toBe("run_completed");
+    expect(terminals(second)[0]?.type).toBe("run_completed");
+    expect(first[0]?.runId).not.toBe(second[0]?.runId);
+
+    // Each run's events must land in its own log, not a shared one.
+    const runs = await runLog.listRuns();
+    expect(runs).toHaveLength(2);
+    for (const run of runs) {
+      const events = await runLog.listEvents(run.runId);
+      expect(events.length).toBeGreaterThan(0);
+      expect(new Set(events.map((event) => event.runId))).toEqual(new Set([run.runId]));
+    }
+  }, 20_000);
 });
