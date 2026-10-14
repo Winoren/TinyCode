@@ -16,7 +16,7 @@ import { editTool } from "../src/tools/edit.ts";
 import { grepTool } from "../src/tools/grep.ts";
 import { lsTool } from "../src/tools/ls.ts";
 import { resolveWithinWorkspace } from "../src/tools/paths.ts";
-import { readTool } from "../src/tools/read.ts";
+import { MAX_IN_MEMORY_BYTES, readTool } from "../src/tools/read.ts";
 import { createToolRegistry } from "../src/tools/registry.ts";
 import type { ToolDefinition } from "../src/tools/types.ts";
 import { writeTool } from "../src/tools/write.ts";
@@ -136,6 +136,55 @@ describe("read", () => {
     const result = await run(readTool, { path: "notes.md" }, cwd);
     expect(result.content).toContain("中文标题");
     expect(result.content).toContain("✅");
+  });
+
+  it("streams a large file instead of loading it, and says the total is unknown", async () => {
+    const cwd = await makeWorkspace();
+    // Just over the in-memory threshold, so the streaming branch is the one taken.
+    const line = `${"x".repeat(99)}\n`;
+    const count = Math.ceil((MAX_IN_MEMORY_BYTES + 1024) / line.length);
+    await fs.writeFile(path.join(cwd, "big.log"), line.repeat(count), "utf8");
+
+    const result = await run(readTool, { path: "big.log", limit: 3 }, cwd);
+
+    const details = result.details as { totalLines: unknown; truncated: boolean; note?: string };
+    // Loading a multi-gigabyte file to count its lines is the failure this avoids.
+    expect(details.totalLines).toBeNull();
+    expect(details.truncated).toBe(true);
+    expect(details.note).toContain("streamed");
+    expect(result.content.split("\n").filter((l) => l.includes("xxx"))).toHaveLength(3);
+  });
+
+  it("honours offset when streaming a large file", async () => {
+    const cwd = await makeWorkspace();
+    const lines = Array.from({ length: 90_000 }, (_unused, index) => `line-${index}`).join("\n");
+    await fs.writeFile(path.join(cwd, "big.txt"), `${lines}\n`, "utf8");
+
+    const result = await run(readTool, { path: "big.txt", offset: 5, limit: 2 }, cwd);
+
+    expect(result.content).toContain("5  line-4");
+    expect(result.content).toContain("6  line-5");
+    expect(result.content).not.toContain("line-6");
+  });
+
+  it("detects a binary file on the streaming path too", async () => {
+    const cwd = await makeWorkspace();
+    // Large enough to bypass the in-memory sniff, and containing a NUL byte.
+    const chunk = Buffer.concat([Buffer.from("text"), Buffer.from([0])]);
+    const repeats = Math.ceil((MAX_IN_MEMORY_BYTES + 1024) / chunk.length);
+    await fs.writeFile(path.join(cwd, "big.bin"), Buffer.concat(Array(repeats).fill(chunk)));
+
+    await expect(run(readTool, { path: "big.bin", limit: 5 }, cwd)).rejects.toMatchObject({
+      code: "invalid_tool",
+    });
+  });
+
+  it("still reports an exact total for a file small enough to read whole", async () => {
+    const cwd = await makeWorkspace();
+    await fs.writeFile(path.join(cwd, "small.txt"), "a\nb\nc", "utf8");
+
+    const result = await run(readTool, { path: "small.txt" }, cwd);
+    expect(result.details).toMatchObject({ totalLines: 3, truncated: false });
   });
 
   it("reports a missing file as invalid_tool rather than crashing", async () => {

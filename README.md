@@ -139,7 +139,9 @@ Closed unless proven otherwise:
   our tool names collide with pi's built-ins, so a surviving built-in `bash` would
   bypass the boundary entirely;
 - tool output is truncated before entering the transcript, because tool results are
-  untrusted input;
+  untrusted input, and `read` bounds how much it holds in memory — a small file is read
+  whole so its line count is exact, a large one is streamed and only the requested
+  window is retained;
 - **credentials are withheld from the commands the model writes.** `bash` does not
   inherit the agent's environment: the credential variables of the providers in use are
   deleted before spawning. Redaction protects the trace; only this protects the model's
