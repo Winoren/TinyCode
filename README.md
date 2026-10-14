@@ -116,6 +116,7 @@ source, so regenerating an unchanged build produces no diff.
 | Waiting for a human is a durable `awaiting_human` state that resumes explicitly | `runtime — waiting for a human is a durable state` |
 | A restart recovers state, and replay rebuilds it exactly | `runtime — persistence`, `core loop — replay equivalence` |
 | The Pi path's live state equals what replay reconstructs from its events | `pi-normalize — state mutation agrees with replay` |
+| The real SDK session runs a tool call, streams, and terminates — against a stub provider, so no key is needed | `pi-live.test.ts` |
 | The real and fake paths produce the same semantic event sequence | `pi-normalize — the real and fake paths agree on Core semantics` |
 | A gated action is not reported as started before it is approved, on either path | `pi-adapter — a gated action is not reported as started before it is approved` |
 | Budgets terminate a run predictably | `core loop — budgets and termination`, and the Pi driver enforces turns and tool calls itself |
@@ -177,10 +178,19 @@ Closed unless proven otherwise:
 
 Honest gaps, not a backlog:
 
-1. **No real end-to-end run has been executed yet.** The environment this was built in
-   has no provider credentials (`~/.pi` absent; no `*_API_KEY` set). Every layer is
-   verified up to the provider boundary, and the CLI fails cleanly at it, but the
-   Skill's "one real workflow run with real input" exit criterion is **not** met.
+1. **No run against a real model provider has completed successfully.** The environment
+   has no credentials (`~/.pi/agent/auth.json` is `{}`; no `*_API_KEY` set).
+
+   This is narrower than it sounds. The real SDK path *is* exercised end to end by
+   [`tests/pi-live.test.ts`](tests/pi-live.test.ts): a real `ModelRuntime` provider points
+   at a local HTTP server speaking the OpenAI-compatible protocol, so a real session
+   runs a real prompt, a real tool-call loop through `defineTool` into our `ToolPort`,
+   real streaming, real normalization, and a real HTTP round trip — only the model's
+   output is scripted. Against a live provider the CLI also reaches the provider and
+   fails at authentication, correctly classified as `auth`.
+
+   What is unverified is the one thing a stub cannot supply: a real model's judgement
+   over a real repository, and whatever that surfaces.
 2. **Token usage may be unknown.** On the deepseek path `agent_end` carries no `usage`
    field, so `usage_reported` reports `tokens unknown` instead of a number. Cost
    tracking needs a second source.
