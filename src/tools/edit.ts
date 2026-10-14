@@ -12,6 +12,7 @@ import fs from "node:fs/promises";
 import { z } from "zod";
 
 import { AgentError, toolOutput } from "../core/contracts.ts";
+import { throwFsError } from "./fs-errors.ts";
 import { resolveWithinWorkspace } from "./paths.ts";
 import type { ToolDefinition } from "./types.ts";
 
@@ -42,10 +43,7 @@ export const editTool: ToolDefinition<EditInput> = {
     try {
       original = await fs.readFile(absolute, "utf8");
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new AgentError("invalid_tool", `file not found: ${input.path}`);
-      }
-      throw error;
+      throwFsError(error, input.path);
     }
 
     // Exact match first: never rewrite text the model quoted verbatim.
@@ -88,7 +86,11 @@ export const editTool: ToolDefinition<EditInput> = {
         ? original.split(needle).join(replacement)
         : original.replace(needle, replacement);
 
-    await fs.writeFile(absolute, updated, "utf8");
+    try {
+      await fs.writeFile(absolute, updated, "utf8");
+    } catch (error) {
+      throwFsError(error, input.path);
+    }
 
     const replaced = input.replaceAll === true ? occurrences : 1;
     return toolOutput(`Replaced ${replaced} occurrence(s) in ${input.path}`, {

@@ -22,6 +22,7 @@ import { z } from "zod";
 
 import { AgentError, toolOutput } from "../core/contracts.ts";
 import { looksBinary } from "./binary.ts";
+import { throwFsError } from "./fs-errors.ts";
 import { resolveWithinWorkspace } from "./paths.ts";
 import type { ToolDefinition } from "./types.ts";
 
@@ -51,14 +52,24 @@ export const readTool: ToolDefinition<ReadInput> = {
     const stats = await statFile(absolute, input.path);
 
     if (stats.isDirectory()) {
-      throw new AgentError("invalid_tool", `not a file: ${input.path} (use ls for directories)`);
+      // Same wording the shared mapper produces, so the message does not depend on which
+      // code path noticed the problem.
+      throw new AgentError(
+        "invalid_tool",
+        `not a file: ${input.path} (it is a directory; use ls to list it)`,
+      );
     }
 
     const start = (input.offset ?? 1) - 1;
     const requested = input.limit ?? MAX_LINES;
 
     if (stats.size <= MAX_IN_MEMORY_BYTES) {
-      const buffer = await fs.readFile(absolute);
+      let buffer: Buffer;
+      try {
+        buffer = await fs.readFile(absolute);
+      } catch (error) {
+        throwFsError(error, input.path);
+      }
       if (looksBinary(buffer)) throw binaryRefusal(input.path, buffer.length);
 
       const lines = splitLines(buffer.toString("utf8"));
@@ -104,10 +115,7 @@ async function statFile(absolute: string, displayPath: string) {
   try {
     return await fs.stat(absolute);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new AgentError("invalid_tool", `file not found: ${displayPath}`);
-    }
-    throw error;
+    throwFsError(error, displayPath);
   }
 }
 

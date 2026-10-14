@@ -10,6 +10,7 @@ import path from "node:path";
 import { z } from "zod";
 
 import { toolOutput } from "../core/contracts.ts";
+import { throwFsError } from "./fs-errors.ts";
 import { resolveWithinWorkspace } from "./paths.ts";
 import type { ToolDefinition } from "./types.ts";
 
@@ -30,10 +31,18 @@ export const writeTool: ToolDefinition<WriteInput> = {
 
   async execute(input, ctx) {
     const absolute = resolveWithinWorkspace(ctx.cwd, input.path);
-    await fs.mkdir(path.dirname(absolute), { recursive: true });
 
-    const existed = await fileExists(absolute);
-    await fs.writeFile(absolute, input.content, "utf8");
+    let existed: boolean;
+    try {
+      await fs.mkdir(path.dirname(absolute), { recursive: true });
+      existed = await fileExists(absolute);
+      await fs.writeFile(absolute, input.content, "utf8");
+    } catch (error) {
+      // A path that is a directory, or whose parent is a file, is a shape error the
+      // model can correct — not an internal failure.
+      throwFsError(error, input.path);
+    }
+
     const bytes = Buffer.byteLength(input.content, "utf8");
 
     return toolOutput(`${existed ? "Overwrote" : "Created"} ${input.path} (${bytes} bytes)`, {

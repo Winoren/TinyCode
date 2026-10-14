@@ -210,6 +210,42 @@ describe("write", () => {
   });
 });
 
+describe("path-shape errors are actionable", () => {
+  it("tells the model a directory is not a file when writing", async () => {
+    const cwd = await makeWorkspace();
+    await fs.mkdir(path.join(cwd, "src"));
+
+    // read already says this clearly; write and edit used to leak a raw EISDIR.
+    let failure: { code?: string; message?: string } | undefined;
+    try {
+      await run(writeTool, { path: "src", content: "x" }, cwd);
+    } catch (error) {
+      failure = error as { code?: string; message?: string };
+    }
+
+    expect(failure?.code).toBe("invalid_tool");
+    expect(failure?.message).toMatch(/directory/i);
+  });
+
+  it("tells the model a directory is not a file when editing", async () => {
+    const cwd = await makeWorkspace();
+    await fs.mkdir(path.join(cwd, "src"));
+
+    await expect(
+      run(editTool, { path: "src", oldString: "a", newString: "b" }, cwd),
+    ).rejects.toMatchObject({ code: "invalid_tool" });
+  });
+
+  it("reports a file used as a directory rather than leaking ENOTDIR", async () => {
+    const cwd = await makeWorkspace();
+    await fs.writeFile(path.join(cwd, "blocker"), "not a directory", "utf8");
+
+    await expect(
+      run(writeTool, { path: "blocker/child.txt", content: "x" }, cwd),
+    ).rejects.toMatchObject({ code: "invalid_tool" });
+  });
+});
+
 describe("edit", () => {
   it("replaces a unique occurrence", async () => {
     const cwd = await makeWorkspace();
