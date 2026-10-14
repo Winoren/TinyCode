@@ -9,7 +9,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import type { Session } from "../core/contracts.ts";
+import { AgentError, type Session } from "../core/contracts.ts";
 
 export interface SessionStore {
   createSession(): Promise<Session>;
@@ -76,12 +76,37 @@ export class JsonSessionStore implements SessionStore {
   }
 
   async loadSession(id: string): Promise<Session | undefined> {
+    const file = this.sessionFile(id);
+
+    let raw: string;
     try {
-      const raw = await fs.readFile(this.sessionFile(id), "utf8");
-      return JSON.parse(raw) as Session;
+      raw = await fs.readFile(file, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-      throw error;
+      throw new AgentError(
+        "runtime_error",
+        `could not read the session file ${file}: ${describe(error)}`,
+      );
+    }
+
+    // The exit criterion is that a restart recovers, *or clearly reports why it cannot*.
+    // Letting JSON.parse's SyntaxError escape satisfies neither half: it names no file,
+    // carries no error code, and tells the caller nothing they can act on.
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!isSessionRecord(parsed)) {
+        throw new AgentError(
+          "runtime_error",
+          `the session file ${file} does not contain a session record; it cannot be recovered`,
+        );
+      }
+      return parsed;
+    } catch (error) {
+      if (error instanceof AgentError) throw error;
+      throw new AgentError(
+        "runtime_error",
+        `the session file ${file} is not valid JSON (${describe(error)}); it cannot be recovered`,
+      );
     }
   }
 
@@ -144,4 +169,16 @@ export class JsonSessionStore implements SessionStore {
     }
     return sessions;
   }
+}
+
+/** Minimal shape check: valid JSON is not the same as a session record. */
+function isSessionRecord(value: unknown): value is Session {
+  if (value === null || typeof value !== "object") return false;
+  const candidate = value as Partial<Session>;
+  return typeof candidate.id === "string" && Array.isArray(candidate.runs);
+}
+
+function describe(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
 }

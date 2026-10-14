@@ -595,3 +595,68 @@ describe("runtime — concurrency", () => {
     }
   }, 20_000);
 });
+
+describe("recovery — damaged durable state", () => {
+  it("clearly reports a corrupt session file instead of leaking a parse error", async () => {
+    const directory = await tempDir();
+    const store = await JsonSessionStore.open(directory, idGenerator());
+    const session = await store.createSession();
+
+    // A truncated write, or damage from outside the process.
+    await fs.writeFile(
+      path.join(directory, "sessions", `${session.id}.json`),
+      '{"id":"x","runs":[',
+      "utf8",
+    );
+
+    let failure: { code?: string; message?: string } | undefined;
+    try {
+      await store.loadSession(session.id);
+    } catch (error) {
+      failure = error as { code?: string; message?: string };
+    }
+
+    // The exit criterion is that a restart recovers, or *clearly reports why it cannot*.
+    // A bare SyntaxError from JSON.parse is not a clear report.
+    expect(failure, "a damaged session file should not load silently").toBeDefined();
+    expect(failure?.code).toBe("runtime_error");
+    expect(failure?.message).toContain(session.id);
+  });
+
+  it("rejects a file that is valid JSON but not a session record", async () => {
+    const directory = await tempDir();
+    const store = await JsonSessionStore.open(directory, idGenerator());
+    const session = await store.createSession();
+
+    // Parses cleanly, so a JSON.parse-only guard would hand back a broken session and
+    // the failure would surface much later, somewhere unrelated.
+    await fs.writeFile(
+      path.join(directory, "sessions", `${session.id}.json`),
+      '{"unexpected":true}',
+      "utf8",
+    );
+
+    await expect(store.loadSession(session.id)).rejects.toMatchObject({
+      code: "runtime_error",
+    });
+  });
+
+  it("still loads an intact session alongside a damaged neighbour", async () => {
+    const directory = await tempDir();
+    const store = await JsonSessionStore.open(directory, idGenerator());
+    const good = await store.createSession();
+    const damaged = await store.createSession();
+
+    await fs.writeFile(
+      path.join(directory, "sessions", `${damaged.id}.json`),
+      "not json at all",
+      "utf8",
+    );
+
+    // One bad file must not make the good one unreachable.
+    const loaded = await store.loadSession(good.id);
+    expect(loaded?.id).toBe(good.id);
+    // And listing skips the unreadable one rather than failing wholesale.
+    expect((await store.listSessions()).map((s) => s.id)).toContain(good.id);
+  });
+});
