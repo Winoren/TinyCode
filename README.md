@@ -105,6 +105,7 @@ source, so regenerating an unchanged build produces no diff.
 | Invariant | Where it is proven |
 |---|---|
 | Two sessions share no state | `runtime — session isolation` |
+| A run cannot name a workspace other than the one its tools are bound to | `runtime — the workspace a run is bound to` |
 | Two concurrent runs in one session do not corrupt each other or the store | `runtime — concurrency` |
 | Every run has exactly one terminal event | `runtime — lifecycle guarantees` |
 | A tool failure is visible and does not corrupt other state | `core loop — refusal and isolation` |

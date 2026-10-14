@@ -25,6 +25,7 @@ import { AgentRuntime, backoffDelayMs, createRuntime } from "../src/runtime/runt
 import { InMemoryRunLog, JsonlRunLog, parseEventLog } from "../src/runtime/run-log.ts";
 import { InMemorySessionStore, JsonSessionStore } from "../src/runtime/session-store.ts";
 import { functionalModel } from "../src/adapters/fake/index.ts";
+import { destructiveCommandPolicy } from "../src/core/gate.ts";
 
 const TASK: Task = { id: "task-1", input: "do the thing", cwd: "/tmp/ws" };
 
@@ -376,14 +377,18 @@ describe("runtime — session isolation", () => {
       newId: idGenerator(),
     });
 
-    const firstEvents = await collect(first.run(TASK));
-    const secondEvents = await collect(second.run(TASK));
+    // Each runtime is bound to its own workspace, so each task must name that one.
+    const firstTask = { ...TASK, cwd: "/tmp/ws-a" };
+    const secondTask = { ...TASK, cwd: "/tmp/ws-b" };
+
+    const firstEvents = await collect(first.run(firstTask));
+    const secondEvents = await collect(second.run(secondTask));
 
     expect(first.session.id).not.toBe(second.session.id);
     expect(firstEvents[0]?.runId).not.toBe(secondEvents[0]?.runId);
 
-    const firstState = await first.finalState(firstEvents[0]?.runId as string, TASK);
-    const secondState = await second.finalState(secondEvents[0]?.runId as string, TASK);
+    const firstState = await first.finalState(firstEvents[0]?.runId as string, firstTask);
+    const secondState = await second.finalState(secondEvents[0]?.runId as string, secondTask);
 
     expect(firstState.observations).toHaveLength(1);
     expect(secondState.observations).toHaveLength(0);
@@ -658,5 +663,54 @@ describe("recovery — damaged durable state", () => {
     expect(loaded?.id).toBe(good.id);
     // And listing skips the unreadable one rather than failing wholesale.
     expect((await store.listSessions()).map((s) => s.id)).toContain(good.id);
+  });
+});
+
+describe("runtime — the workspace a run is bound to", () => {
+  it("refuses a task whose cwd disagrees with the one the tools are bound to", async () => {
+    const runLog = new InMemoryRunLog();
+    const sessionStore = new InMemorySessionStore(idGenerator());
+
+    const runtime = await createRuntime({
+      cwd: "/workspace",
+      driver: coreLoopDriver({
+        model: scriptedModel([{ kind: "respond", content: "done" }]),
+        tools: fakeTools({}),
+      }),
+      runLog,
+      sessionStore,
+      newId: idGenerator(),
+      sleep: async () => true,
+    });
+
+    // The tool port is confined to /workspace. A task naming anywhere else would run
+    // its commands in one directory while the persisted run record claimed another —
+    // and the gate would be resolving paths against the wrong root.
+    await expect(
+      collect(runtime.run({ id: "t", input: "work", cwd: "/somewhere/else" })),
+    ).rejects.toMatchObject({ code: "runtime_error" });
+
+    // The matching case still runs.
+    const events = await collect(runtime.run({ id: "t", input: "work", cwd: "/workspace" }));
+    expect(terminals(events)[0]?.type).toBe("run_completed");
+  });
+
+  it("accepts a cwd that differs only by a trailing separator", async () => {
+    const runLog = new InMemoryRunLog();
+    const sessionStore = new InMemorySessionStore(idGenerator());
+    const runtime = await createRuntime({
+      cwd: "/workspace",
+      driver: coreLoopDriver({
+        model: scriptedModel([{ kind: "respond", content: "done" }]),
+        tools: fakeTools({}),
+      }),
+      runLog,
+      sessionStore,
+      newId: idGenerator(),
+      sleep: async () => true,
+    });
+
+    const events = await collect(runtime.run({ id: "t", input: "work", cwd: "/workspace/" }));
+    expect(terminals(events)[0]?.type).toBe("run_completed");
   });
 });

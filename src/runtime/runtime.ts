@@ -23,11 +23,14 @@
  * 6. **Persistence never blocks the loop.** Events are written fire-and-forget.
  */
 
+import path from "node:path";
+
 import {
   DEFAULT_BUDGET,
   initialState,
   isTerminalEvent,
   RETRYABLE_ERROR_CODES,
+  AgentError,
   type AgentEvent,
   type AgentState,
   type EventDraft,
@@ -121,6 +124,22 @@ export class AgentRuntime {
   }
 
   async *run(task: Task, callerSignal?: AbortSignal): AsyncGenerator<AgentEvent, void, void> {
+    // Refuse before anything is created. The tool port is confined to one workspace at
+    // construction, while `task.cwd` is what the gate resolves paths against and what the
+    // persisted run record reports. Letting the two differ would run commands in one
+    // directory while the trace claimed another — a misleading record at best.
+    //
+    // Thrown rather than reported as a terminal event, because no run should exist to
+    // have one.
+    if (path.resolve(task.cwd) !== path.resolve(this.cwd)) {
+      throw new AgentError(
+        "runtime_error",
+        `this runtime is bound to ${this.cwd}, but the task names ${task.cwd}. ` +
+          "The tools would run in one directory while the run record claimed another; " +
+          "create a runtime per workspace.",
+      );
+    }
+
     const startedAt = this.now();
     const runId = this.newId();
     const run: Run = {
