@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { bashTool } from "../src/tools/bash.ts";
 import { editTool } from "../src/tools/edit.ts";
-import { grepTool } from "../src/tools/grep.ts";
+import { REGEX_TOTAL_BUDGET_MS, grepTool } from "../src/tools/grep.ts";
 import { lsTool } from "../src/tools/ls.ts";
 import { resolveWithinWorkspace } from "../src/tools/paths.ts";
 import { MAX_IN_MEMORY_BYTES, readTool } from "../src/tools/read.ts";
@@ -299,6 +299,40 @@ describe("grep", () => {
     expect(result.content).not.toContain("node_modules");
     expect(result.content).not.toContain("blob.bin");
   });
+
+  it("interrupts a catastrophically backtracking pattern and stays usable", async () => {
+    const cwd = await makeWorkspace();
+    // Textbook ReDoS: (a+)+$ against many a's then b backtracks exponentially. V8 has
+    // no regex timeout, and a fired AbortSignal cannot interrupt synchronous
+    // backtracking, so without the sandbox this call would never return.
+    await fs.writeFile(path.join(cwd, "evil.txt"), `${"a".repeat(200)}b\n`, "utf8");
+    await fs.writeFile(path.join(cwd, "ok.txt"), "needle\n", "utf8");
+
+    const started = Date.now();
+    let failure: { code?: string } | undefined;
+    try {
+      await run(grepTool, { pattern: "(a+)+$" }, cwd);
+    } catch (error) {
+      failure = error as { code?: string };
+    }
+    const elapsed = Date.now() - started;
+
+    // Bounded, not "however long V8 felt like taking".
+    expect(elapsed).toBeLessThan(REGEX_TOTAL_BUDGET_MS + 2_000);
+    expect(elapsed).toBeGreaterThanOrEqual(REGEX_TOTAL_BUDGET_MS - 300);
+
+    // Classified, not a raw escape. `timeout` is retryable, so reporting it that way
+    // would make the Runtime retry a pattern that will never get faster; a vm timeout
+    // error also fails `instanceof Error` (different realm), so an `instanceof` guard
+    // would let it through unclassified.
+    expect(failure, "the runaway pattern should have failed rather than returned").toBeDefined();
+    expect(failure?.code).toBe("invalid_tool");
+
+    // Interruption uses the V8 terminator; a poisoned isolate would kill the agent for
+    // the rest of the run.
+    const after = await run(grepTool, { pattern: "needle" }, cwd);
+    expect(after.content).toContain("ok.txt:1:");
+  }, 20_000);
 
   it("rejects an invalid regular expression as invalid_tool", async () => {
     const cwd = await makeWorkspace();

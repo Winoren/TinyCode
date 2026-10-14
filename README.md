@@ -115,6 +115,7 @@ source, so regenerating an unchanged build produces no diff.
 | A restart recovers state, and replay rebuilds it exactly | `runtime — persistence`, `core loop — replay equivalence` |
 | The Pi path's live state equals what replay reconstructs from its events | `pi-normalize — state mutation agrees with replay` |
 | Budgets terminate a run predictably | `core loop — budgets and termination`, and the Pi driver enforces turns and tool calls itself |
+| A model-supplied regex cannot hang the run past its budget | `grep — interrupts a catastrophically backtracking pattern` |
 | `run_completed` distinguishes `complete` from `partial` | `cli — end-to-end vertical slice` |
 | Usage is reported, or explicitly unknown — never a fabricated zero | `event rendering` |
 | Tools cannot escape the workspace, including via symlinks | `workspace boundary` |
@@ -138,6 +139,11 @@ Closed unless proven otherwise:
 - the driver refuses to run if the model would be offered a tool it did not define —
   our tool names collide with pi's built-ins, so a surviving built-in `bash` would
   bypass the boundary entirely;
+- **a model-supplied regex cannot hang the run.** V8 has no regex timeout and a fired
+  `AbortSignal` cannot interrupt synchronous backtracking, so `grep` evaluates patterns
+  inside a `vm` context with a deadline. The pattern is passed as sandbox *data*, never
+  interpolated into source. A pattern that cannot finish is `invalid_tool` — deliberately
+  not `timeout`, which would be retried forever;
 - tool output is truncated before entering the transcript, because tool results are
   untrusted input, and `read` bounds how much it holds in memory — a small file is read
   whole so its line count is exact, a large one is streamed and only the requested
