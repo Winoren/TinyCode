@@ -11,6 +11,7 @@ import fs from "node:fs/promises";
 import { z } from "zod";
 
 import { AgentError, toolOutput } from "../core/contracts.ts";
+import { looksBinary } from "./binary.ts";
 import { resolveWithinWorkspace } from "./paths.ts";
 import type { ToolDefinition } from "./types.ts";
 
@@ -37,8 +38,20 @@ export const readTool: ToolDefinition<ReadInput> = {
 
     let raw: string;
     try {
-      raw = await fs.readFile(absolute, "utf8");
+      // Read bytes first so binary content can be refused rather than decoded into
+      // replacement characters that cost context and say nothing.
+      const buffer = await fs.readFile(absolute);
+      if (looksBinary(buffer)) {
+        throw new AgentError(
+          "invalid_tool",
+          `refusing to read a binary file: ${input.path} (${buffer.length} bytes). ` +
+            "This tool reads text only; use ls to list and grep to search.",
+        );
+      }
+      raw = buffer.toString("utf8");
     } catch (error) {
+      // Our own refusal must not be rewrapped as a generic read failure.
+      if (error instanceof AgentError) throw error;
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "ENOENT") {
         throw new AgentError("invalid_tool", `file not found: ${input.path}`);

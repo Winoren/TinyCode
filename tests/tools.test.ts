@@ -114,6 +114,30 @@ describe("read", () => {
     expect(result.content).toContain("2 more lines");
   });
 
+  it("refuses a binary file instead of pouring mojibake into the transcript", async () => {
+    const cwd = await makeWorkspace();
+    const png = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      ...Array.from({ length: 256 }, (_unused, index) => index),
+    ]);
+    await fs.writeFile(path.join(cwd, "image.png"), png);
+
+    // A NUL byte is the standard binary sniff. Decoding this as UTF-8 would produce
+    // replacement characters that cost context and tell the model nothing.
+    await expect(run(readTool, { path: "image.png" }, cwd)).rejects.toMatchObject({
+      code: "invalid_tool",
+    });
+  });
+
+  it("still reads a text file that merely contains non-ASCII characters", async () => {
+    const cwd = await makeWorkspace();
+    await fs.writeFile(path.join(cwd, "notes.md"), "# 中文标题\nemoji ✅\n", "utf8");
+
+    const result = await run(readTool, { path: "notes.md" }, cwd);
+    expect(result.content).toContain("中文标题");
+    expect(result.content).toContain("✅");
+  });
+
   it("reports a missing file as invalid_tool rather than crashing", async () => {
     const cwd = await makeWorkspace();
     await expect(run(readTool, { path: "nope.txt" }, cwd)).rejects.toMatchObject({

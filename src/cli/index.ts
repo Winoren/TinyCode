@@ -16,13 +16,22 @@
 
 import readline from "node:readline/promises";
 
-import { bootstrap } from "../bootstrap.ts";
+import { bootstrap, type BootstrapOptions } from "../bootstrap.ts";
 import type { AgentEvent } from "../core/contracts.ts";
 import type { HumanInputChannel } from "../core/loop.ts";
 import { CliUsageError, parseArgs, usageText } from "./args.ts";
 import { createEventRenderer } from "./render.ts";
 
-export async function main(argv: readonly string[]): Promise<number> {
+/**
+ * `bootstrapOptions` is a seam, not production configuration: it lets a test drive the
+ * real CLI — real argument handling, real rendering, real exit codes — with only the
+ * model swapped out. Without it the whole product surface is untestable until someone
+ * has a provider key, which is exactly how the exit codes went unverified.
+ */
+export async function main(
+  argv: readonly string[],
+  bootstrapOptions: Partial<BootstrapOptions> = {},
+): Promise<number> {
   let options;
   try {
     options = parseArgs(argv);
@@ -52,6 +61,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   let toolNames: string[];
   try {
     const bootstrapped = await bootstrap({
+      ...bootstrapOptions,
       cwd: options.cwd,
       ...(options.model === undefined ? {} : { modelSpec: options.model }),
       toolNames: options.tools,

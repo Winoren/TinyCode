@@ -11,6 +11,7 @@ import path from "node:path";
 import { z } from "zod";
 
 import { AgentError, toolOutput } from "../core/contracts.ts";
+import { looksBinary } from "./binary.ts";
 import { resolveWithinWorkspace } from "./paths.ts";
 import type { ToolDefinition } from "./types.ts";
 import { walkFiles } from "./walk.ts";
@@ -96,9 +97,7 @@ async function readTextOrUndefined(absolute: string): Promise<string | undefined
     if (stat.size > MAX_FILE_BYTES) return undefined;
 
     const buffer = await fs.readFile(absolute);
-    // NUL byte in the first block is the standard binary sniff.
-    const probe = buffer.subarray(0, 8_000);
-    if (probe.includes(0)) return undefined;
+    if (looksBinary(buffer)) return undefined;
 
     return buffer.toString("utf8");
   } catch {
