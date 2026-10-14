@@ -43,6 +43,7 @@ import type { RunDriver } from "../../core/loop.ts";
 import { assistantReplyEntry } from "../../core/transcript.ts";
 import type { AnyToolDefinition } from "../../tools/types.ts";
 import {
+  classifyErrorStop,
   createNormalizationScratch,
   finalAnswerText,
   normalizeSessionEvent,
@@ -314,10 +315,9 @@ export function piDriver(options: PiDriverOptions): RunDriver {
       return;
     }
     if (scratch.stopReason === "error") {
-      yield {
-        type: "run_failed",
-        error: { code: "provider_unavailable", message: "the model turn reported an error" },
-      };
+      // Classify from the provider's own message rather than assuming an outage: an
+      // invalid key is `auth`, which is not retryable and tells the user what to fix.
+      yield { type: "run_failed", error: classifyErrorStop(scratch) };
       return;
     }
 

@@ -44,6 +44,15 @@ export interface NormalizationScratch {
   fullText: string;
   lastSegmentText: string;
   stopReason: string | undefined;
+  /**
+   * The provider's own error text from the final assistant message.
+   *
+   * Discarding this was a real defect: an invalid API key surfaced as a synthesised
+   * "the model turn reported an error" classified `provider_unavailable`, which is both
+   * misleading (it is an auth problem the user can fix) and retryable (so it burned
+   * three attempts before failing).
+   */
+  errorMessage: string | undefined;
   usage: SdkUsage | undefined;
   /** Tool names the run could not use; drives complete-vs-partial. */
   missing: Set<string>;
@@ -57,6 +66,7 @@ export function createNormalizationScratch(): NormalizationScratch {
     fullText: "",
     lastSegmentText: "",
     stopReason: undefined,
+    errorMessage: undefined,
     usage: undefined,
     missing: new Set(),
     turns: 0,
@@ -149,12 +159,14 @@ export function normalizeSessionEvent(
       const messages = event.messages as readonly {
         role?: string;
         stopReason?: string;
+        errorMessage?: string;
         usage?: SdkUsage;
       }[];
       const lastAssistant = [...messages]
         .reverse()
         .find((message) => message.role === "assistant");
       scratch.stopReason = lastAssistant?.stopReason ?? scratch.stopReason;
+      scratch.errorMessage = lastAssistant?.errorMessage ?? scratch.errorMessage;
       // The deepseek path is known to omit `usage` here; leave it undefined rather
       // than reporting fabricated zeros.
       scratch.usage = lastAssistant?.usage ?? scratch.usage;
@@ -220,4 +232,20 @@ export function toUsageReport(
   if (usage?.output !== undefined) report.outputTokens = usage.output;
   if (usage?.cost?.total !== undefined) report.costUSD = usage.cost.total;
   return report;
+}
+
+/**
+ * Classify a turn that ended in error, using the provider's own message.
+ *
+ * Exported so the mapping is testable: an invalid key must come back as `auth` — not
+ * retryable and not vague — while a genuine outage stays `provider_unavailable`.
+ */
+export function classifyErrorStop(scratch: NormalizationScratch): RunError {
+  if (scratch.errorMessage === undefined || scratch.errorMessage.trim() === "") {
+    return {
+      code: "provider_unavailable",
+      message: "the model turn reported an error without a message",
+    };
+  }
+  return normalizeUnknownError(new Error(scratch.errorMessage));
 }

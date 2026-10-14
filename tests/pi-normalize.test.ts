@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import { initialState, type AgentEvent, type AgentState, type EventDraft, type Task } from "../src/core/contracts.ts";
 import { replayAgentState } from "../src/core/replay.ts";
 import {
+  classifyErrorStop,
   createNormalizationScratch,
   describeToolError,
   extractToolOutput,
@@ -227,6 +228,43 @@ describe("agent_end", () => {
     const report = toUsageReport(harness.scratch.usage, 0, 5, "deepseek/x");
     expect(report.inputTokens).toBeUndefined();
     expect(report.outputTokens).toBeUndefined();
+  });
+});
+
+describe("classifying a turn that ended in error", () => {
+  it("uses the provider's own message instead of assuming an outage", () => {
+    // Found by driving the real path with an invalid key: it surfaced as
+    // `provider_unavailable`, which is both misleading and retryable.
+    const scratch = createNormalizationScratch();
+    scratch.errorMessage = "401 Unauthorized: invalid api key";
+
+    expect(classifyErrorStop(scratch).code).toBe("auth");
+    expect(classifyErrorStop(scratch).message).toContain("invalid api key");
+  });
+
+  it("keeps a genuine balance failure as provider_unavailable", () => {
+    const scratch = createNormalizationScratch();
+    scratch.errorMessage = "402 Insufficient Balance";
+
+    expect(classifyErrorStop(scratch).code).toBe("provider_unavailable");
+  });
+
+  it("falls back when the provider supplies no message", () => {
+    const error = classifyErrorStop(createNormalizationScratch());
+    expect(error.code).toBe("provider_unavailable");
+    expect(error.message.length).toBeGreaterThan(0);
+  });
+
+  it("captures errorMessage from the final assistant message", () => {
+    const harness = makeHarness();
+    feed(harness, {
+      type: "agent_end",
+      willRetry: false,
+      messages: [{ role: "assistant", stopReason: "error", errorMessage: "401 Unauthorized" }],
+    });
+
+    expect(harness.scratch.errorMessage).toBe("401 Unauthorized");
+    expect(classifyErrorStop(harness.scratch).code).toBe("auth");
   });
 });
 
