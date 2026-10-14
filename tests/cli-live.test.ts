@@ -95,6 +95,80 @@ describe("cli end to end against a custom endpoint", () => {
     expect(stub.requestBodies[1]).toContain("export const answer = 42");
   }, 30_000);
 
+  it("keeps the endpoint credential out of the output and the trace", async () => {
+    const cwd = await tempDir();
+    const storeDir = await tempDir();
+    const secret = "sk-live-secret-9f2c8a1b4d6e0357";
+
+    // The realistic leak vector: a provider that echoes the credential back in its own
+    // output. Redaction was only ever tested against a fake driver, so nothing had
+    // verified that a credential held by the CLI actually reaches the redactor.
+    const stub = await startStubProvider([{ text: `Your key is ${secret}, by the way.` }]);
+    providers.push(stub);
+
+    const result = await runMain([
+      "--cwd", cwd,
+      "--store-dir", storeDir,
+      "--base-url", `http://127.0.0.1:${stub.port}/v1`,
+      "--api-key", secret,
+      "--model", "stub-model",
+      "--tools", "read",
+      "hi",
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(result.out).not.toContain(secret);
+    expect(result.err).not.toContain(secret);
+    // The run really happened, so the absence above is not an artefact of failing early.
+    expect(result.out).toContain("by the way");
+
+    const entries = await fs.readdir(storeDir, { recursive: true, withFileTypes: true });
+    const files = entries.filter((entry) => entry.isFile());
+    expect(files.length).toBeGreaterThan(0);
+    for (const entry of files) {
+      const content = await fs.readFile(path.join(entry.parentPath, entry.name), "utf8");
+      expect(content, `${entry.name} must not contain the credential`).not.toContain(secret);
+    }
+  }, 30_000);
+
+  it("auto-approves a gated action with --yes and records the confirmation", async () => {
+    const cwd = await tempDir();
+    const storeDir = await tempDir();
+
+    // Gated by policy, harmless to run in a throwaway directory: there is no repository
+    // here, so git fails fast and its non-zero exit is reported as information.
+    const stub = await startStubProvider([
+      { toolCall: { name: "bash", args: { command: "git push --force" } } },
+      { text: "Nothing to push." },
+    ]);
+    providers.push(stub);
+
+    const result = await runMain([
+      "--json",
+      "--yes",
+      "--cwd", cwd,
+      "--store-dir", storeDir,
+      "--base-url", `http://127.0.0.1:${stub.port}/v1`,
+      "--model", "stub-model",
+      "--tools", "bash",
+      "push it",
+    ]);
+
+    expect(result.code).toBe(0);
+
+    const events = result.out
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => JSON.parse(line) as { type: string });
+
+    // The confirmation is on the record even though a person was not asked.
+    const types = events.map((event) => event.type);
+    expect(types).toContain("human_input_requested");
+    expect(types).toContain("human_input_received");
+    expect(types.indexOf("human_input_received")).toBeLessThan(types.indexOf("tool_started"));
+    expect(types.at(-1)).toBe("run_completed");
+  }, 30_000);
+
   it("says tokens are unknown rather than printing zero", async () => {
     const cwd = await tempDir();
     const storeDir = await tempDir();

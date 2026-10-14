@@ -141,6 +141,8 @@ source, so regenerating an unchanged build produces no diff.
 | Project-specific ignores are honoured, not just a built-in directory list | `.gitignore` — skips `target/`, honours a negation, applies from a deeper search root |
 | Search results are workspace-relative, so they can be fed to another tool | `.gitignore` — applies the workspace's patterns even when the search starts deeper |
 | The whole product runs end to end against a self-hosted endpoint, and reports it | `cli-live.test.ts` — real CLI, real session, real tool call |
+| A credential the CLI holds never reaches stdout, stderr, or disk — even when the endpoint echoes it | `cli-live.test.ts` — keeps the endpoint credential out of the output and the trace |
+| `--yes` records the confirmation it stands in for, in the same order | `cli-live.test.ts` — auto-approves a gated action with --yes |
 | A file can be located by name even with write and shell tools withheld | `find` — bare patterns match the name anywhere, slash patterns match the path |
 | `run_completed` distinguishes `complete` from `partial` | `cli — end-to-end vertical slice` |
 | Usage is reported when the endpoint reports it, and unknown when it does not — never a fabricated zero | `live — reports tokens when the endpoint reports them` / `reports unknown rather than zero` |
