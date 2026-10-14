@@ -11,6 +11,7 @@
  * shutdown paths can still await durability deliberately.
  */
 
+import { identityRedactor, redactValue, type Redactor } from "../core/redact.ts";
 import type { AgentEvent, EventDraft } from "../core/contracts.ts";
 import type { RunLog } from "./run-log.ts";
 
@@ -24,11 +25,16 @@ export class EventRecorder {
     private readonly runLog: RunLog,
     private readonly now: () => number,
     private readonly onPersistenceError: ((error: unknown) => void) | undefined = undefined,
+    private readonly redact: Redactor = identityRedactor,
   ) {}
 
   record(draft: EventDraft): AgentEvent {
+    // Redact on the way in, so an event that is handed to a consumer and an event
+    // that reaches disk are the same value. Redacting only at the write step would
+    // leave the live stream leaky.
+    const safe = this.redact.size === 0 ? draft : redactValue(draft, this.redact);
     const event = {
-      ...draft,
+      ...safe,
       runId: this.runId,
       sequence: this.sequence,
       timestamp: this.now(),

@@ -11,9 +11,12 @@
 
 import path from "node:path";
 
+import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
+
 import { piDriver } from "./adapters/pi/driver.ts";
 import { DEFAULT_BUDGET, type RunBudget, type ToolPort } from "./core/contracts.ts";
 import type { HumanInputChannel, RunDriver } from "./core/loop.ts";
+import { createRedactor } from "./core/redact.ts";
 import { resolveModel } from "./model/registry.ts";
 import {
   AgentRuntime,
@@ -49,6 +52,12 @@ export interface BootstrapOptions {
   }) => RunDriver;
   runLog?: RunLog;
   sessionStore?: SessionStore;
+  /**
+   * Extra credential values to redact from every event. Provider keys found in the
+   * environment are added automatically; this is for callers that hold a secret the
+   * resolver cannot see.
+   */
+  secrets?: readonly string[];
   /** Surface tool-schema conversion problems. */
   onDiagnostics?: (diagnostics: readonly string[]) => void;
 }
@@ -98,7 +107,16 @@ export async function bootstrap(options: BootstrapOptions): Promise<Bootstrapped
       });
   }
 
-  // --- 2. Only now touch the filesystem. ---
+  // --- 2. Collect the credentials this process actually holds, so they can be kept
+  //        out of every event and out of the durable trace. ---
+  const secretCandidates = [...(options.secrets ?? [])];
+  for (const providerId of envWiredProviders) {
+    const key = getEnvApiKey(providerId);
+    if (key !== undefined) secretCandidates.push(key);
+  }
+  const redact = createRedactor(secretCandidates);
+
+  // --- 3. Only now touch the filesystem. ---
   const runLog = options.runLog ?? (await JsonlRunLog.open(storeDir));
   const sessionStore =
     options.sessionStore ?? (await JsonSessionStore.open(storeDir, newId));
@@ -117,6 +135,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<Bootstrapped
     budget,
     newId,
     model: modelLabel,
+    redact,
     ...(options.humanInput === undefined ? {} : { humanInput: options.humanInput }),
     ...(options.onPersistenceError === undefined
       ? {}

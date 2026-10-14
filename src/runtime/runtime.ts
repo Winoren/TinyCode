@@ -38,6 +38,7 @@ import {
   type Task,
 } from "../core/contracts.ts";
 import { isAbortError, normalizeUnknownError } from "../core/errors.ts";
+import { identityRedactor, type Redactor } from "../core/redact.ts";
 import type { DriverContext, HumanInputChannel, RunDriver } from "../core/loop.ts";
 import { replayAgentState, type ReplayResult } from "../core/replay.ts";
 import { EventRecorder } from "./recorder.ts";
@@ -65,6 +66,11 @@ export interface AgentRuntimeOptions {
   onPersistenceError?: (error: unknown) => void;
   /** Injectable so tests do not actually wait out a backoff. */
   sleep?: Sleeper;
+  /**
+   * Applied to every event before it is handed out or written, so the live stream and
+   * the durable log cannot disagree about what was redacted.
+   */
+  redact?: Redactor;
 }
 
 export class AgentRuntime {
@@ -81,6 +87,7 @@ export class AgentRuntime {
   private readonly newId: () => string;
   private readonly onPersistenceError: ((error: unknown) => void) | undefined;
   private readonly sleep: Sleeper;
+  private readonly redact: Redactor;
 
   constructor(session: Session, options: AgentRuntimeOptions) {
     this.session = session;
@@ -95,6 +102,7 @@ export class AgentRuntime {
     this.newId = options.newId ?? defaultIdGenerator();
     this.onPersistenceError = options.onPersistenceError;
     this.sleep = options.sleep ?? sleepUnlessAborted;
+    this.redact = options.redact ?? identityRedactor;
   }
 
   /** Reconstruct a past run's state from its durable event log. */
@@ -130,7 +138,13 @@ export class AgentRuntime {
     const signal =
       callerSignal === undefined ? timeoutSignal : AbortSignal.any([callerSignal, timeoutSignal]);
 
-    const recorder = new EventRecorder(runId, this.runLog, this.now, this.onPersistenceError);
+    const recorder = new EventRecorder(
+      runId,
+      this.runLog,
+      this.now,
+      this.onPersistenceError,
+      this.redact,
+    );
     const state = initialState(task);
 
     let terminalKind: Run["status"] | undefined;

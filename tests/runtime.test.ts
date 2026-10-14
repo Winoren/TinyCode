@@ -151,7 +151,7 @@ describe("runtime — lifecycle guarantees", () => {
 
 describe("runtime — termination is never fabricated", () => {
   it("classifies a caller cancellation as run_cancelled, not a failure", async () => {
-    const { runtime } = await makeRuntime(hangingDriver, {
+    const { runtime, runLog } = await makeRuntime(hangingDriver, {
       budget: { ...DEFAULT_BUDGET, timeoutMs: 30_000 },
     });
     const controller = new AbortController();
@@ -160,6 +160,11 @@ describe("runtime — termination is never fabricated", () => {
     const events = await collect(runtime.run(TASK, controller.signal));
 
     expect(terminals(events)[0]?.type).toBe("run_cancelled");
+
+    // Cancellation must be *persisted*, not merely observed: a restart has to be able
+    // to tell a cancelled run from one that is still going.
+    const runId = events[0]?.runId as string;
+    expect((await runLog.loadRun(runId))?.status).toBe("cancelled");
   });
 
   it("distinguishes a time-budget expiry from a user cancellation", async () => {

@@ -99,7 +99,8 @@ source, so regenerating an unchanged build produces no diff.
 | Two sessions share no state | `runtime — session isolation` |
 | Every run has exactly one terminal event | `runtime — lifecycle guarantees` |
 | A tool failure is visible and does not corrupt other state | `core loop — refusal and isolation` |
-| Cancellation stops work and is never retried, and is distinct from a timeout | `runtime — termination is never fabricated` |
+| Cancellation stops work, is never retried, and is persisted as `cancelled` | `runtime — termination is never fabricated` |
+| Credentials never reach an event or the durable log, even when a provider error echoes them | `credentials never reach the durable trace` |
 | Retry is bounded, visible, and skipped for non-retryable and cancelled runs | `runtime — bounded, visible retry` |
 | Waiting for a human is a durable `awaiting_human` state that resumes explicitly | `runtime — waiting for a human is a durable state` |
 | A restart recovers state, and replay rebuilds it exactly | `runtime — persistence`, `core loop — replay equivalence` |
@@ -128,6 +129,9 @@ Closed unless proven otherwise:
   bypass the boundary entirely;
 - tool output is truncated before entering the transcript, because tool results are
   untrusted input;
+- **credentials are redacted from every event** before it is handed to a consumer or
+  written to disk — exact-value matching of the keys this process actually holds, not
+  pattern matching, so a tool result quoting a key from your own file is not mangled;
 - `ask_human` without a channel **fails**; when stdin is not a terminal, confirmations
   are unavailable rather than assumed.
 
