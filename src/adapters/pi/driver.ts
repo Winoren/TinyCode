@@ -7,6 +7,9 @@
  * emits, and the AgentState is mutated through the same shared helpers
  * (`transcript.ts`), so the fake path and the real path mean the same thing.
  *
+ * The translation itself lives in `./normalize.ts` as a pure function, so the
+ * SDK-coupled logic has tests rather than only a live-provider path.
+ *
  * Three SDK facts this file is built around, all verified against 0.84.2 rather than
  * assumed (see docs/adapter-mapping.md):
  *
@@ -31,30 +34,28 @@ import {
 import {
   AgentError,
   BudgetExceededError,
-  toolOutput,
   type EventDraft,
-  type Observation,
-  type RunError,
-  type ToolOutput,
   type ToolPort,
-  type UsageReport,
 } from "../../core/contracts.ts";
-import { normalizeUnknownError } from "../../core/errors.ts";
 import type { RunDriver } from "../../core/loop.ts";
-import { assistantIntentEntry, assistantReplyEntry, toolResultEntry } from "../../core/transcript.ts";
+import { assistantReplyEntry } from "../../core/transcript.ts";
 import type { AnyToolDefinition } from "../../tools/types.ts";
+import {
+  createNormalizationScratch,
+  finalAnswerText,
+  normalizeSessionEvent,
+  toUsageReport,
+  type SessionEvent,
+} from "./normalize.ts";
 import { definePiTools } from "./tools.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 
 type SessionOptions = NonNullable<Parameters<typeof createAgentSession>[0]>;
-type SessionInstance = Awaited<ReturnType<typeof createAgentSession>>["session"];
-type SessionEvent = Parameters<Parameters<SessionInstance["subscribe"]>[0]>[0];
 
-/** The subset of the SDK's `Usage` we map. Field names verified against pi-ai. */
-interface SdkUsage {
-  input?: number;
-  output?: number;
-  cost?: { total?: number };
+export interface PiSessionPlan {
+  sessionOptions: SessionOptions;
+  /** Non-empty when a tool schema could not be converted to a model-facing schema. */
+  diagnostics: string[];
 }
 
 export interface PiDriverOptions {
@@ -82,12 +83,6 @@ export interface PiDriverOptions {
   verifyToolSurface?: boolean;
   /** Receives schema-conversion diagnostics so the caller can surface them. */
   onDiagnostics?: (diagnostics: readonly string[]) => void;
-}
-
-export interface PiSessionPlan {
-  sessionOptions: SessionOptions;
-  /** Non-empty when a tool schema could not be converted to a model-facing schema. */
-  diagnostics: string[];
 }
 
 /**
@@ -160,14 +155,7 @@ export function piDriver(options: PiDriverOptions): RunDriver {
 
     let promptSettled = false;
     let failure: unknown;
-    let stopReason: string | undefined;
-    let sdkUsage: SdkUsage | undefined;
-    let fullText = "";
-    let lastSegmentText = "";
-    /** SDK-level model turns; this is what `maxIterations` bounds. */
-    let turns = 0;
-    const missing = new Set<string>();
-    const startedTools = new Map<string, { readonly startedAt: number }>();
+    const scratch = createNormalizationScratch();
 
     const enqueue = (draft: EventDraft): void => {
       queue.push(draft);
@@ -199,7 +187,7 @@ export function piDriver(options: PiDriverOptions): RunDriver {
         );
         return;
       }
-      if (turns > ctx.budget.maxIterations) {
+      if (scratch.turns > ctx.budget.maxIterations) {
         fail(
           new BudgetExceededError(
             "budget_iterations",
@@ -209,109 +197,14 @@ export function piDriver(options: PiDriverOptions): RunDriver {
       }
     };
 
-    function handle(event: SessionEvent): void {
-      switch (event.type) {
-        case "message_update": {
-          const inner = event.assistantMessageEvent;
-          if (inner.type === "text_delta") {
-            fullText += inner.delta;
-            lastSegmentText += inner.delta;
-            enqueue({ type: "text_delta", delta: inner.delta });
-          } else if (inner.type === "thinking_delta") {
-            enqueue({ type: "thinking_delta", delta: inner.delta });
-          }
-          return;
-        }
-
-        case "tool_execution_start": {
-          const args = (event.args ?? {}) as Record<string, unknown>;
-          const intent = { name: event.toolName, arguments: args };
-          startedTools.set(event.toolCallId, { startedAt: ctx.now() });
-          state.toolCalls += 1;
-          state.transcript.push(assistantIntentEntry(intent));
-          // Text emitted before an action belongs to that action, not to the answer.
-          lastSegmentText = "";
-          enqueue({ type: "decision_made", decision: { kind: "call_tool", intent } });
-          enqueue({
-            type: "tool_started",
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            args,
-          });
-          enforceBudgets();
-          return;
-        }
-
-        case "tool_execution_end": {
-          const started = startedTools.get(event.toolCallId);
-          const durationMs = started === undefined ? 0 : ctx.now() - started.startedAt;
-          const isError = event.isError === true;
-
-          const observation: Observation = isError
-            ? {
-                name: event.toolName,
-                ok: false,
-                error: describeToolError(event.result),
-                durationMs,
-                observedAt: ctx.now(),
-              }
-            : {
-                name: event.toolName,
-                ok: true,
-                result: extractToolOutput(event.result),
-                durationMs,
-                observedAt: ctx.now(),
-              };
-
-          if (isError && observation.error?.code === "invalid_tool") {
-            // A refused tool is an absent capability, not a transient failure.
-            missing.add(event.toolName);
-          }
-
-          state.observations.push(observation);
-          state.transcript.push(toolResultEntry(event.toolName, observation));
-          state.iteration += 1;
-
-          enqueue({
-            type: "tool_completed",
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            status: isError ? "error" : "success",
-            ...(observation.result === undefined ? {} : { result: observation.result }),
-            ...(observation.error === undefined ? {} : { error: observation.error }),
-            durationMs,
-          });
-          enqueue({ type: "observation_added", name: event.toolName, observation });
-          return;
-        }
-
-        case "agent_end": {
-          const messages = event.messages as readonly {
-            role?: string;
-            stopReason?: string;
-            usage?: SdkUsage;
-          }[];
-          const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant");
-          stopReason = lastAssistant?.stopReason ?? stopReason;
-          // The deepseek path is known to omit `usage` here; leave it undefined
-          // rather than reporting fabricated zeros.
-          sdkUsage = lastAssistant?.usage ?? sdkUsage;
-          turns += 1;
-          enforceBudgets();
-          return;
-        }
-
-        default:
-          // turn_start/end, message_start/end, queue_update, compaction_*,
-          // entry_appended, session_info_changed, thinking_level_changed, agent_settled:
-          // no product-level meaning that the events above do not already carry.
-          return;
-      }
-    }
-
-    const unsubscribe = session.subscribe((event) => {
+    const unsubscribe = session.subscribe((event: SessionEvent) => {
       try {
-        handle(event);
+        for (const draft of normalizeSessionEvent(event, state, scratch, ctx.now)) {
+          enqueue(draft);
+        }
+        if (event.type === "tool_execution_start" || event.type === "agent_end") {
+          enforceBudgets();
+        }
       } catch (error) {
         failure ??= error;
         promptSettled = true;
@@ -366,20 +259,20 @@ export function piDriver(options: PiDriverOptions): RunDriver {
     // Cancellation is a lifecycle state; let the Runtime classify it.
     if (ctx.signal.aborted) throw new DOMException("aborted", "AbortError");
 
-    const content = (lastSegmentText.trim() !== "" ? lastSegmentText : fullText).trim();
+    const content = finalAnswerText(scratch);
     state.transcript.push(assistantReplyEntry(content));
     yield { type: "decision_made", decision: { kind: "respond", content } };
 
     yield {
       type: "usage_reported",
-      usage: toUsageReport(sdkUsage, state.toolCalls, ctx.now() - startedAt, ctx.model),
+      usage: toUsageReport(scratch.usage, state.toolCalls, ctx.now() - startedAt, ctx.model),
     };
 
-    if (stopReason === "aborted") {
+    if (scratch.stopReason === "aborted") {
       yield { type: "run_cancelled" };
       return;
     }
-    if (stopReason === "error") {
+    if (scratch.stopReason === "error") {
       yield {
         type: "run_failed",
         error: { code: "provider_unavailable", message: "the model turn reported an error" },
@@ -389,9 +282,9 @@ export function piDriver(options: PiDriverOptions): RunDriver {
 
     yield {
       type: "run_completed",
-      status: missing.size > 0 ? "partial" : "complete",
+      status: scratch.missing.size > 0 ? "partial" : "complete",
       result: content,
-      ...(missing.size > 0 ? { missingMaterial: [...missing].sort() } : {}),
+      ...(scratch.missing.size > 0 ? { missingMaterial: [...scratch.missing].sort() } : {}),
     };
   };
 }
@@ -413,50 +306,4 @@ function assertToolSurface(active: readonly string[], expected: ReadonlySet<stri
       `refusing to run: the model would be offered tools we did not define: ${unexpected.join(", ")}`,
     );
   }
-}
-
-/** Recover our `ToolOutput` from the SDK's `AgentToolResult` envelope. */
-function extractToolOutput(result: unknown): ToolOutput {
-  if (result !== null && typeof result === "object" && "content" in result) {
-    const envelope = result as { content?: unknown; details?: unknown };
-    let text = "";
-    if (Array.isArray(envelope.content)) {
-      text = envelope.content
-        .map((part) =>
-          part !== null && typeof part === "object" && (part as { type?: string }).type === "text"
-            ? String((part as { text?: unknown }).text ?? "")
-            : "",
-        )
-        .join("");
-    }
-    return toolOutput(text, envelope.details);
-  }
-  return toolOutput(String(result));
-}
-
-function describeToolError(result: unknown): RunError {
-  const message =
-    typeof result === "string"
-      ? result
-      : result !== null && typeof result === "object" && "message" in result
-        ? String((result as { message: unknown }).message)
-        : JSON.stringify(result ?? "tool failed");
-  return { code: normalizeUnknownError(new Error(message)).code, message };
-}
-
-function toUsageReport(
-  usage: SdkUsage | undefined,
-  toolCalls: number,
-  durationMs: number,
-  model: string | undefined,
-): UsageReport {
-  // Field names come from pi-ai's `Usage` (input/output/cost.total), NOT from the
-  // Skill's §2.4 list (inputTokens/cacheReadInputTokens), which describes
-  // agent-runner's normalized shape. See docs/adapter-mapping.md §2.4.
-  const report: UsageReport = { toolCalls, durationMs };
-  if (model !== undefined) report.model = model;
-  if (usage?.input !== undefined) report.inputTokens = usage.input;
-  if (usage?.output !== undefined) report.outputTokens = usage.output;
-  if (usage?.cost?.total !== undefined) report.costUSD = usage.cost.total;
-  return report;
 }

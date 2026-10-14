@@ -52,6 +52,14 @@ Both paths build transcript entries through the same helpers in
 a structural property rather than a promise. Full reasoning:
 [`docs/adapter-mapping.md`](docs/adapter-mapping.md).
 
+The SDK translation itself lives in [`src/adapters/pi/normalize.ts`](src/adapters/pi/normalize.ts)
+as a **pure function over synthetic events**, not inside a subscription callback. That
+matters: it is the most SDK-coupled code in the project and therefore the most likely to
+break on an upgrade, and while it lived in the callback the only way to exercise it was a
+live provider turn. As a pure function it has real tests, including one asserting that
+the state the Pi path mutates live is byte-identical to what replay reconstructs from
+its own events.
+
 ## Run it
 
 ```bash
@@ -104,6 +112,7 @@ source, so regenerating an unchanged build produces no diff.
 | Retry is bounded, visible, and skipped for non-retryable and cancelled runs | `runtime — bounded, visible retry` |
 | Waiting for a human is a durable `awaiting_human` state that resumes explicitly | `runtime — waiting for a human is a durable state` |
 | A restart recovers state, and replay rebuilds it exactly | `runtime — persistence`, `core loop — replay equivalence` |
+| The Pi path's live state equals what replay reconstructs from its events | `pi-normalize — state mutation agrees with replay` |
 | Budgets terminate a run predictably | `core loop — budgets and termination`, and the Pi driver enforces turns and tool calls itself |
 | `run_completed` distinguishes `complete` from `partial` | `cli — end-to-end vertical slice` |
 | Usage is reported, or explicitly unknown — never a fabricated zero | `event rendering` |
