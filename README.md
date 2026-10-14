@@ -130,6 +130,9 @@ source, so regenerating an unchanged build produces no diff.
 | A restart recovers state, and replay rebuilds it exactly | `runtime — persistence`, `core loop — replay equivalence` |
 | The Pi path's live state equals what replay reconstructs from its events | `pi-normalize — state mutation agrees with replay` |
 | The real SDK session runs a tool call, streams, and terminates — against a stub provider, so no key is needed | `pi-live.test.ts` |
+| Several tool calls in one turn are all executed, observed and replayable | `pi-live.test.ts` — handles several tool calls in one turn |
+| Two runs in one session do not inherit each other's conversation | `pi-live.test.ts` — keeps two runs in one session independent |
+| The iteration budget counts model calls across a multi-turn run | `pi-live.test.ts` — counts turns correctly across a multi-turn run |
 | Tool and iteration budgets, cancellation, timeout and retry behave the same on the real SDK path | `pi-live.test.ts` — budgets, cancellation and failure |
 | A failed tool is evidence; only a refused *capability* is missing material | `pi-live.test.ts` — classifies a real tool failure |
 | An error's code survives a boundary that forwards only its message | `pi-live.test.ts` — classifies a real tool failure |

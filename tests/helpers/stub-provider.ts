@@ -15,6 +15,8 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 export interface StubTurn {
   /** Emit a tool call for this tool instead of text. */
   toolCall?: { name: string; args: Record<string, unknown> };
+  /** Emit several tool calls in one turn, which is what real models usually do. */
+  toolCalls?: Array<{ name: string; args: Record<string, unknown> }>;
   text?: string;
   /** Fail the request with this HTTP status instead of completing it. */
   httpStatus?: number;
@@ -76,25 +78,26 @@ export async function startStubProvider(turns: readonly StubTurn[]): Promise<Stu
             ...(usage === undefined ? {} : { usage }),
           })}\n\n`;
 
-        if (turn.toolCall !== undefined) {
+        const calls = turn.toolCalls ?? (turn.toolCall === undefined ? [] : [turn.toolCall]);
+
+        if (calls.length > 0) {
           response.write(chunk({ role: "assistant", content: "Working on it. " }));
           response.write(
             chunk({
-              tool_calls: [
-                {
-                  index: 0,
-                  id: `call_${requestCount}`,
-                  type: "function",
-                  function: { name: turn.toolCall.name, arguments: "" },
-                },
-              ],
+              tool_calls: calls.map((call, index) => ({
+                index,
+                id: `call_${requestCount}_${index}`,
+                type: "function",
+                function: { name: call.name, arguments: "" },
+              })),
             }),
           );
           response.write(
             chunk({
-              tool_calls: [
-                { index: 0, function: { arguments: JSON.stringify(turn.toolCall.args) } },
-              ],
+              tool_calls: calls.map((call, index) => ({
+                index,
+                function: { arguments: JSON.stringify(call.args) },
+              })),
             }),
           );
           response.write(chunk({}, "tool_calls", turn.usage));

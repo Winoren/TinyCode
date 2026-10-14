@@ -32,6 +32,7 @@ import {
   startStubProvider,
   stubModel,
   type StubProvider,
+  type StubTurn,
 } from "./helpers/stub-provider.ts";
 
 const directories: string[] = [];
@@ -393,6 +394,127 @@ describe("live: budgets, cancellation and failure on the real path", () => {
 
     // A failed tool is evidence, not an absent capability: the run still completes.
     expect(terminals(events)[0]).toMatchObject({ type: "run_completed", status: "complete" });
+  }, 30_000);
+
+  it("handles several tool calls in one turn", async () => {
+    const cwd = await tempDir();
+    await fs.writeFile(path.join(cwd, "a.ts"), "export const a = 1;\n", "utf8");
+    await fs.writeFile(path.join(cwd, "b.ts"), "export const b = 2;\n", "utf8");
+
+    // Real models batch tool calls constantly — reading two files in one turn is the
+    // ordinary case, and every stub before this one could only ask for a single tool.
+    const stub = await startStubProvider([
+      {
+        toolCalls: [
+          { name: "read", args: { path: "a.ts" } },
+          { name: "read", args: { path: "b.ts" } },
+        ],
+      },
+      { text: "Both read." },
+    ]);
+    providers.push(stub);
+
+    const { runtime } = await liveRuntime({ cwd, stub, toolNames: ["read"] });
+
+    const events = await collect(runtime.run({ id: "multi", input: "read both", cwd }));
+    const types = events.map((event) => event.type);
+
+    expect(types.filter((type) => type === "tool_started")).toHaveLength(2);
+    expect(types.filter((type) => type === "tool_completed")).toHaveLength(2);
+    expect(types.filter((type) => type === "observation_added")).toHaveLength(2);
+
+    // Both results reached the model: the second request carries both files.
+    expect(stub.requestBodies).toHaveLength(2);
+    expect(stub.requestBodies[1]).toContain("export const a = 1");
+    expect(stub.requestBodies[1]).toContain("export const b = 2");
+
+    expect(terminals(events)[0]).toMatchObject({ type: "run_completed", status: "complete" });
+
+    // Every call is accounted for in the state replay rebuilds.
+    const runId = events[0]?.runId as string;
+    const recovered = await runtime.recover(runId, { id: "multi", input: "read both", cwd });
+    expect(recovered.state.toolCalls).toBe(2);
+    expect(recovered.state.observations).toHaveLength(2);
+  }, 30_000);
+
+  it("keeps two runs in one session independent", async () => {
+    const cwd = await tempDir();
+    await fs.writeFile(path.join(cwd, "secret-plan.txt"), "PROJECT ORCHID\n", "utf8");
+
+    const stub = await startStubProvider([
+      { toolCall: { name: "read", args: { path: "secret-plan.txt" } } },
+      { text: "First run done." },
+      { text: "Second run done." },
+    ]);
+    providers.push(stub);
+
+    const { runtime } = await liveRuntime({ cwd, stub, toolNames: ["read"] });
+
+    const first = await collect(runtime.run({ id: "run-1", input: "read the plan", cwd }));
+    const second = await collect(runtime.run({ id: "run-2", input: "unrelated task", cwd }));
+
+    expect(terminals(first)[0]).toMatchObject({ type: "run_completed" });
+    expect(terminals(second)[0]).toMatchObject({ type: "run_completed" });
+    expect(first[0]?.runId).not.toBe(second[0]?.runId);
+
+    // The second run must not inherit the first run's conversation. Each driver invocation
+    // opens a fresh SDK session, so the provider request for run two carries nothing from
+    // run one — which is the whole point of a session being a container for runs rather
+    // than a single growing conversation.
+    expect(stub.requestBodies).toHaveLength(3);
+    expect(stub.requestBodies[2]).not.toContain("PROJECT ORCHID");
+    expect(stub.requestBodies[2]).toContain("unrelated task");
+
+    // And the run log keeps them apart.
+    const runIds = new Set([first[0]?.runId, second[0]?.runId]);
+    expect(runIds.size).toBe(2);
+  }, 30_000);
+
+  it("counts turns correctly across a multi-turn run", async () => {
+    const cwd = await tempDir();
+
+    // A realistic shape rather than one repeating turn: three actions, then an answer —
+    // four model calls. The iteration-budget fix was verified with a stub that repeated a
+    // single turn, which exercises the counter differently.
+    const script: StubTurn[] = [
+      { toolCall: { name: "ls", args: {} } },
+      { toolCall: { name: "ls", args: {} } },
+      { toolCall: { name: "ls", args: {} } },
+      { text: "Finished after three looks." },
+    ];
+
+    const withinBudget = await startStubProvider(script);
+    providers.push(withinBudget);
+    const { runtime } = await liveRuntime({
+      cwd,
+      stub: withinBudget,
+      toolNames: ["ls"],
+      budget: { maxIterations: 4, maxToolCalls: 10 },
+    });
+
+    const finished = await collect(runtime.run({ id: "turns-ok", input: "look around", cwd }));
+
+    expect(terminals(finished)[0]).toMatchObject({ type: "run_completed", status: "complete" });
+    expect(finished.filter((event) => event.type === "tool_started")).toHaveLength(3);
+    // Four model calls reached the provider, and the run needed all four.
+    expect(withinBudget.requestBodies).toHaveLength(4);
+
+    // One turn short: the answering turn is refused.
+    const short = await startStubProvider(script);
+    providers.push(short);
+    const { runtime: tight } = await liveRuntime({
+      cwd,
+      stub: short,
+      toolNames: ["ls"],
+      budget: { maxIterations: 3, maxToolCalls: 10 },
+    });
+
+    const refused = await collect(tight.run({ id: "turns-tight", input: "look around", cwd }));
+
+    expect(terminals(refused)[0]).toMatchObject({
+      type: "run_failed",
+      error: { code: "budget_iterations" },
+    });
   }, 30_000);
 
   it("reports tokens when the endpoint reports them", async () => {
