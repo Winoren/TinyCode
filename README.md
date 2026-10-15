@@ -29,7 +29,7 @@ Task → Context → model decision → tool action → observation → state up
 | **Core** | What does a valid Agent run *mean*? | [`src/core/`](src/core) — pure TypeScript: no SDK, filesystem, network, timers or globals |
 | **Runtime** | How does a run actually happen and survive? | [`src/runtime/`](src/runtime) — session/run identity, event envelope, cancellation, budgets, durability |
 | **Adapters** | How do concrete model and tools plug in? | [`src/adapters/`](src/adapters) — the deterministic fake path and the Pi SDK path |
-| **Product surface** | How does a person use it? | [`src/cli/`](src/cli) |
+| **Product surface** | How does a person use it? | [`src/cli/`](src/cli) — the terminal; [`app/`](app) — the desktop host |
 
 The Core is runnable with fake adapters alone — no process, database, network or UI.
 That is what makes the loop testable, and it is asserted in
@@ -90,6 +90,37 @@ key answers 401, which is reported as `auth`. `TINYCODE_BASE_URL`, `TINYCODE_MOD
 ✗ could not start: no authenticated model is available. Set a provider API key
   in the environment (for example DEEPSEEK_API_KEY, ...) and try again. (auth)
 ```
+
+## Desktop
+
+```bash
+npm run desktop        # electron-vite dev
+npm run desktop:test   # build + Playwright E2E (no network: the fake driver)
+```
+
+[`app/`](app) is a second host for the same harness, not a rewrite. It calls the
+same [`bootstrap()`](src/bootstrap.ts) the CLI calls — same Runtime, same gate,
+same tools, same JSONL run log — and its only new wiring is transport: events
+cross the IPC boundary to a React timeline, and the human-input channel becomes
+an approval dialog. Core and Runtime source are untouched.
+
+- **One window, one active run.** A second start is refused, not queued. Cancel
+  fires the same `AbortController` path the CLI uses; the run records
+  `run_cancelled`.
+- **History is read, not duplicated.** The sidebar lists runs from the chosen
+  workspace's own `.tinycode/` store, and a replay folds the persisted events
+  through the same function the live view uses, so the two cannot disagree.
+- **The model is configured like the CLI's deployment mode**: `TINYCODE_BASE_URL`
+  / `TINYCODE_MODEL` / `TINYCODE_API_KEY`, loaded from the install-directory
+  `.env` (real environment wins; a `.env` in the *workspace* is never read).
+- **Renderer security defaults**: context isolation on, `nodeIntegration` off,
+  no remote content, a strict CSP, and exactly one typed bridge
+  ([`app/src/preload/index.ts`](app/src/preload/index.ts)) — the renderer can
+  start, cancel, answer, pick a workspace, and read history, nothing else.
+- **The E2E suite runs the real app with no network**: `TINYCODE_DESKTOP_FAKE=1`
+  assembles `bootstrap()` with the scripted-model driver over the *real* tool
+  registry and gate, so the approval dialog is exercised both ways — approve
+  ends `complete`, decline ends `partial` with missing material.
 
 ## Verify
 

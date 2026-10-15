@@ -9,15 +9,21 @@
     "node": ">=22.19"
   },
   "bin": {
-    "tinycode": "./dist/cli/index.js"
+    "tinycode": "bin/tinycode.js"
   },
+  "workspaces": [
+    "app"
+  ],
   "scripts": {
     "dev": "tsx src/cli/index.ts",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "golden": "tsx scripts/generate-golden.ts"
+    "golden": "tsx scripts/generate-golden.ts",
+    "desktop": "npm run dev --workspace tinycode-desktop",
+    "desktop:build": "npm run build --workspace tinycode-desktop",
+    "desktop:test": "npm run test:e2e --workspace tinycode-desktop"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "0.84.2",

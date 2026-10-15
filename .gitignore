@@ -1,6 +1,11 @@
 node_modules/
 dist/
+out/
 coverage/
 *.log
 .DS_Store
 .tinycode/
+.env
+test-results/
+playwright-report/
+.trae/
