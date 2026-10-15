@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Run } from "tinycode/dist/core/contracts.js";
 import type { HostMessage, HostRunInfo } from "../../shared/protocol.ts";
 import { ApprovalDialog, type PendingRequest } from "./components/ApprovalDialog.tsx";
-import { HistoryPanel } from "./components/HistoryPanel.tsx";
+import { HistoryPanel, STATUS_LABEL } from "./components/HistoryPanel.tsx";
 import { Timeline } from "./components/Timeline.tsx";
 import { foldAll, foldEvent, type TimelineItem } from "./timeline.ts";
 
@@ -146,8 +146,8 @@ export function App() {
     <div className="app">
       <header className="app-header">
         <span className="wordmark">TinyCode</span>
-        {fakeMode && <span className="chip chip-fake">fake driver</span>}
-        <span className="header-meta">{runInfo?.modelLabel ?? "no run yet"}</span>
+        {fakeMode && <span className="chip chip-fake">模拟驱动</span>}
+        <span className="header-meta">{runInfo?.modelLabel ?? "尚未运行"}</span>
       </header>
 
       <div className="app-body">
@@ -166,7 +166,7 @@ export function App() {
               <section className="composer" aria-label="Task">
                 <textarea
                   className="task-input"
-                  placeholder="Describe the task for the agent…"
+                  placeholder="描述要交给 Agent 的任务…"
                   value={task}
                   rows={2}
                   onChange={(event) => setTask(event.target.value)}
@@ -178,7 +178,7 @@ export function App() {
                 />
                 {runActive ? (
                   <button type="button" className="button button-danger" onClick={cancelRun} data-testid="cancel-button">
-                    Cancel run
+                    取消运行
                   </button>
                 ) : (
                   <button
@@ -188,14 +188,14 @@ export function App() {
                     disabled={!canRun}
                     data-testid="run-button"
                   >
-                    Run
+                    运行
                   </button>
                 )}
               </section>
 
               {startError !== undefined && (
                 <p className="host-error" role="alert" data-testid="start-error">
-                  Could not start: {startError}
+                  启动失败：{startError}
                 </p>
               )}
               {hostErrors.length > 0 && (
@@ -208,7 +208,7 @@ export function App() {
 
               <Timeline
                 items={items}
-                emptyHint="No events yet. Pick a workspace, describe a task, and run it."
+                emptyHint="还没有事件。选择工作区，描述任务，然后运行。"
               />
               <div ref={bottomRef} />
             </>
@@ -216,16 +216,16 @@ export function App() {
             <section className="replay" aria-label="Run replay">
               <div className="replay-head">
                 <button type="button" className="button button-ghost" onClick={() => setHistory(undefined)}>
-                  ← Back to live
+                  ← 返回实时
                 </button>
                 <span className={`run-status run-status-${history.run.status}`}>
-                  {history.run.status}
+                  {STATUS_LABEL[history.run.status]}
                 </span>
                 <span className="replay-task" title={history.run.task.input}>
                   {history.run.task.input}
                 </span>
               </div>
-              <Timeline items={history.items} emptyHint="This run recorded no events." />
+              <Timeline items={history.items} emptyHint="该运行没有记录事件。" />
             </section>
           )}
         </main>

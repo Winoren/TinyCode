@@ -7,13 +7,13 @@
 import { memo } from "react";
 import type { Run } from "tinycode/dist/core/contracts.js";
 
-const STATUS_LABEL: Record<Run["status"], string> = {
-  queued: "queued",
-  running: "running",
-  awaiting_human: "waiting",
-  completed: "done",
-  failed: "failed",
-  cancelled: "cancelled",
+export const STATUS_LABEL: Record<Run["status"], string> = {
+  queued: "排队中",
+  running: "运行中",
+  awaiting_human: "等待确认",
+  completed: "已完成",
+  failed: "失败",
+  cancelled: "已取消",
 };
 
 export const HistoryPanel = memo(function HistoryPanel({
@@ -31,7 +31,7 @@ export const HistoryPanel = memo(function HistoryPanel({
   onPickWorkspace: () => void;
   onBackToLive: () => void;
 }) {
-  const workspaceName = workspace === "" ? "no workspace" : basename(workspace);
+  const workspaceName = workspace === "" ? "未选择工作区" : basename(workspace);
   return (
     <aside className="sidebar">
       <div className="workspace">
@@ -39,16 +39,16 @@ export const HistoryPanel = memo(function HistoryPanel({
           {workspaceName}
         </p>
         <button type="button" className="button button-ghost" onClick={onPickWorkspace}>
-          Change…
+          更换…
         </button>
         <button type="button" className="button button-ghost" onClick={onBackToLive} data-testid="live-button">
-          Live view
+          实时视图
         </button>
       </div>
 
-      <h2 className="sidebar-heading">Runs</h2>
+      <h2 className="sidebar-heading">运行记录</h2>
       {runs.length === 0 ? (
-        <p className="sidebar-empty">No runs recorded in this workspace yet.</p>
+        <p className="sidebar-empty">此工作区还没有运行记录。</p>
       ) : (
         <ul className="run-list" aria-label="Run history">
           {runs.map((run) => (
@@ -82,10 +82,10 @@ function basename(path: string): string {
 
 function relativeTime(timestamp: number): string {
   const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 60) return `${seconds} 秒前`;
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return `${minutes} 分钟前`;
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
+  if (hours < 24) return `${hours} 小时前`;
+  return `${Math.round(hours / 24)} 天前`;
 }

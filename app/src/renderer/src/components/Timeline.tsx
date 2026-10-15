@@ -56,12 +56,12 @@ const Row = memo(function Row({ item }: { item: TimelineItem }) {
 const ToolRow = memo(function ToolRow({ item }: { item: ToolItem }) {
   const stateLabel =
     item.status === "running"
-      ? "running"
+      ? "运行中"
       : item.status === "success"
-        ? "ok"
+        ? "成功"
         : item.status === "declined"
-          ? "declined"
-          : "error";
+          ? "已拒绝"
+          : "错误";
   return (
     <li className={`row tool status-${item.status}`} data-testid="timeline-tool" data-status={item.status}>
       <span className="sequence">{item.sequence}</span>
@@ -94,7 +94,7 @@ const AssistantRow = memo(function AssistantRow({ item }: { item: AssistantItem 
       <div className="row-body">
         {item.thinking !== "" && (
           <details className="thinking">
-            <summary>thinking</summary>
+            <summary>思考过程</summary>
             <div className="thinking-text">{item.thinking}</div>
           </details>
         )}
@@ -111,7 +111,7 @@ const HumanRow = memo(function HumanRow({ item }: { item: HumanItem }) {
       <div className="row-body">
         <p className="human-question">{item.question}</p>
         {item.answer !== undefined && (
-          <p className="human-answer">answered: {excerpt(item.answer, 120)}</p>
+          <p className="human-answer">已回答：{excerpt(item.answer, 120)}</p>
         )}
       </div>
     </li>
@@ -134,34 +134,34 @@ const UsageRow = memo(function UsageRow({ item }: { item: UsageItem }) {
       <dl className="usage-list">
         {usage.model !== undefined && (
           <div className="usage-cell">
-            <dt>model</dt>
+            <dt>模型</dt>
             <dd>{usage.model}</dd>
           </div>
         )}
         {usage.inputTokens !== undefined && (
           <div className="usage-cell">
-            <dt>input</dt>
+            <dt>输入</dt>
             <dd>{usage.inputTokens.toLocaleString()} tok</dd>
           </div>
         )}
         {usage.outputTokens !== undefined && (
           <div className="usage-cell">
-            <dt>output</dt>
+            <dt>输出</dt>
             <dd>{usage.outputTokens.toLocaleString()} tok</dd>
           </div>
         )}
         {usage.costUSD !== undefined && (
           <div className="usage-cell">
-            <dt>cost</dt>
+            <dt>费用</dt>
             <dd>${usage.costUSD.toFixed(4)}</dd>
           </div>
         )}
         <div className="usage-cell">
-          <dt>tool calls</dt>
+          <dt>工具调用</dt>
           <dd>{usage.toolCalls}</dd>
         </div>
         <div className="usage-cell">
-          <dt>duration</dt>
+          <dt>耗时</dt>
           <dd>{formatDuration(usage.durationMs)}</dd>
         </div>
       </dl>
@@ -175,10 +175,10 @@ const TerminalRow = memo(function TerminalRow({ item }: { item: TerminalItem }) 
     return (
       <li className="terminal terminal-complete" data-testid="terminal-banner" data-terminal-status={event.status}>
         {event.status === "complete" ? (
-          <p>Run complete.</p>
+          <p>运行完成。</p>
         ) : (
           <p>
-            Run finished as partial — missing: {(event.missingMaterial ?? []).join(", ")}
+            运行部分完成——缺失材料：{(event.missingMaterial ?? []).join("、")}
           </p>
         )}
         <p className="terminal-detail">{event.result}</p>
@@ -189,7 +189,7 @@ const TerminalRow = memo(function TerminalRow({ item }: { item: TerminalItem }) 
     return (
       <li className="terminal terminal-failed" data-testid="terminal-banner" data-terminal-status="failed">
         <p>
-          Run failed — {event.error.code}
+          运行失败——{event.error.code}
         </p>
         <p className="terminal-detail">{event.error.message}</p>
       </li>
@@ -197,7 +197,7 @@ const TerminalRow = memo(function TerminalRow({ item }: { item: TerminalItem }) 
   }
   return (
     <li className="terminal terminal-cancelled" data-testid="terminal-banner" data-terminal-status="cancelled">
-      <p>Run cancelled.</p>
+      <p>运行已取消。</p>
     </li>
   );
 });

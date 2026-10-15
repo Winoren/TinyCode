@@ -81,18 +81,18 @@ export type TimelineItem =
 export function foldEvent(items: readonly TimelineItem[], event: AgentEvent): TimelineItem[] {
   switch (event.type) {
     case "run_started":
-      return [...items, note(event, "Run started", "system")];
+      return [...items, note(event, "运行开始", "system")];
 
     case "run_resumed":
-      return [...items, note(event, "Resumed", "system")];
+      return [...items, note(event, "已恢复运行", "system")];
 
     case "retry_scheduled":
       return [
         ...items,
         note(
           event,
-          `Attempt ${event.attempt}/${event.maxAttempts} failed (${event.error.code}); ` +
-            `retrying in ${formatDuration(event.delayMs)}`,
+          `第 ${event.attempt}/${event.maxAttempts} 次尝试失败（${event.error.code}）；` +
+            `${formatDuration(event.delayMs)}后重试`,
           "retry",
         ),
       ];

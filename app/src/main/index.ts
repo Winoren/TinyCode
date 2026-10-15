@@ -40,8 +40,8 @@ function describe(error: unknown): string {
 function registerIpcHandlers(): void {
   ipcMain.handle("desktop:start-run", (_event, task: unknown, cwd: unknown) =>
     result(async () => {
-      if (!isNonEmptyString(task)) throw new Error("task must be a non-empty string");
-      if (!isNonEmptyString(cwd)) throw new Error("workspace must be a non-empty string");
+      if (!isNonEmptyString(task)) throw new Error("任务必须是非空字符串");
+      if (!isNonEmptyString(cwd)) throw new Error("工作区必须是非空字符串");
       await host.startRun(task, cwd);
       return null;
     }),
@@ -57,7 +57,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("desktop:answer-human", (_event, requestId: unknown, value: unknown) =>
     result(() => {
       if (typeof requestId !== "number" || !Number.isInteger(requestId) || requestId <= 0) {
-        throw new Error("requestId must be a positive integer");
+        throw new Error("requestId 必须是正整数");
       }
       host.answerHuman(requestId, value);
       return null;
@@ -68,15 +68,15 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("desktop:list-runs", (_event, cwd: unknown) =>
     result(async () => {
-      if (!isNonEmptyString(cwd)) throw new Error("workspace must be a non-empty string");
+      if (!isNonEmptyString(cwd)) throw new Error("工作区必须是非空字符串");
       return host.listRuns(cwd);
     }),
   );
 
   ipcMain.handle("desktop:load-run", (_event, cwd: unknown, runId: unknown) =>
     result(async () => {
-      if (!isNonEmptyString(cwd)) throw new Error("workspace must be a non-empty string");
-      if (!isNonEmptyString(runId)) throw new Error("runId must be a non-empty string");
+      if (!isNonEmptyString(cwd)) throw new Error("工作区必须是非空字符串");
+      if (!isNonEmptyString(runId)) throw new Error("runId 必须是非空字符串");
       return host.loadRun(cwd, runId);
     }),
   );

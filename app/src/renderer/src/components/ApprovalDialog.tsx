@@ -36,14 +36,14 @@ export function ApprovalDialog({
         aria-labelledby="approval-question"
         data-testid="approval-dialog"
       >
-        <h2 id="approval-question">Approval needed</h2>
+        <h2 id="approval-question">需要确认</h2>
         <pre className="dialog-question" data-testid="approval-question">
           {request.question}
         </pre>
         <input
           className="dialog-input"
           type="text"
-          placeholder="Or type an answer for the agent…"
+          placeholder="或者输入给 Agent 的回答…"
           value={text}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
@@ -57,7 +57,7 @@ export function ApprovalDialog({
             data-testid="decline-button"
             onClick={() => onAnswer("no")}
           >
-            Decline
+            拒绝
           </button>
           <button
             type="button"
@@ -65,7 +65,7 @@ export function ApprovalDialog({
             data-testid="approve-button"
             onClick={() => onAnswer("approve")}
           >
-            Approve
+            批准
           </button>
         </div>
       </div>

@@ -50,13 +50,13 @@ export class AgentHost {
    */
   async startRun(task: string, cwd: string): Promise<void> {
     if (this.active !== undefined) {
-      throw new Error("a run is already active; cancel it before starting another");
+      throw new Error("已有运行中的任务；请先取消再开始新的任务");
     }
 
     const workspace = path.resolve(cwd);
     const stat = await fs.stat(workspace).catch(() => undefined);
     if (stat === undefined || !stat.isDirectory()) {
-      throw new Error(`workspace is not a directory: ${workspace}`);
+      throw new Error(`工作区不是目录：${workspace}`);
     }
 
     const bootstrapped = await bootstrap({
@@ -69,7 +69,7 @@ export class AgentHost {
       },
       // A persistence failure is visible but never fatal — same policy as the CLI.
       onPersistenceError: (error) => {
-        this.send({ kind: "host-error", message: `[trace] persist failed: ${describe(error)}` });
+        this.send({ kind: "host-error", message: `[trace] 持久化失败：${describe(error)}` });
       },
       ...(isFakeMode() ? fakeBootstrapOverrides() : {}),
     });
@@ -98,7 +98,7 @@ export class AgentHost {
     } catch (error) {
       // The Runtime guarantees exactly one terminal event, so reaching here means
       // something outside the run contract broke; say so honestly.
-      this.send({ kind: "host-error", message: `run pump failed: ${describe(error)}` });
+      this.send({ kind: "host-error", message: `运行事件泵失败：${describe(error)}` });
     } finally {
       this.active = undefined;
       this.send({ kind: "run-active", active: false });
@@ -106,7 +106,7 @@ export class AgentHost {
   }
 
   cancelRun(): void {
-    if (this.active === undefined) throw new Error("no run is active");
+    if (this.active === undefined) throw new Error("当前没有运行中的任务");
     this.active.controller.abort();
   }
 
@@ -142,7 +142,7 @@ export class AgentHost {
   answerHuman(requestId: number, value: unknown): void {
     const pending = this.pendingHuman.get(requestId);
     if (pending === undefined) {
-      throw new Error(`no pending human input request #${requestId}`);
+      throw new Error(`没有等待中的确认请求 #${requestId}`);
     }
     this.pendingHuman.delete(requestId);
     pending.resolve(value);
@@ -157,7 +157,7 @@ export class AgentHost {
   async loadRun(cwd: string, runId: string): Promise<{ run: Run; events: AgentEvent[] }> {
     const log = this.runLogFor(cwd);
     const [run, events] = await Promise.all([log.loadRun(runId), log.listEvents(runId)]);
-    if (run === undefined) throw new Error(`no run with id ${runId} in this workspace`);
+    if (run === undefined) throw new Error(`此工作区中不存在运行 ${runId}`);
     return { run, events };
   }
 
@@ -171,7 +171,7 @@ export class AgentHost {
   async pickWorkspace(): Promise<string | null> {
     const window = this.getWindow();
     const options: OpenDialogOptions = {
-      title: "Choose a workspace",
+      title: "选择工作区",
       properties: ["openDirectory", "createDirectory"],
       defaultPath: this.installRoot,
     };
@@ -210,7 +210,7 @@ function modelOptions(): Partial<Pick<BootstrapOptions, "customEndpoint" | "mode
 
   if (model === undefined || model.trim() === "") {
     throw new Error(
-      "TINYCODE_BASE_URL is set but TINYCODE_MODEL is missing; the endpoint needs a model name",
+      "已设置 TINYCODE_BASE_URL 但缺少 TINYCODE_MODEL；该端点需要模型名称",
     );
   }
 
@@ -218,7 +218,7 @@ function modelOptions(): Partial<Pick<BootstrapOptions, "customEndpoint" | "mode
   const providerId = slash === -1 ? "custom" : model.slice(0, slash);
   const modelId = slash === -1 ? model : model.slice(slash + 1);
   if (providerId === "" || modelId === "") {
-    throw new Error(`malformed TINYCODE_MODEL "${model}"; expected "<model>" or "<provider>/<model>"`);
+    throw new Error(`TINYCODE_MODEL "${model}" 格式错误；应为 "<model>" 或 "<provider>/<model>"`);
   }
   const customEndpoint: CustomEndpoint = {
     providerId,
